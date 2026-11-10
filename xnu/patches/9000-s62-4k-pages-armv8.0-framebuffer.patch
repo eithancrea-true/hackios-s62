@@ -94,10 +94,26 @@ index 00568d3..094db7d 100644
  #error Nested shared page mapping is unsupported on this config
  #endif
 diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
-index 06bb568..b744b42 100644
+index 06bb568..a379576 100644
 --- a/osfmk/arm64/arm_vm_init.c
 +++ b/osfmk/arm64/arm_vm_init.c
-@@ -1837,16 +1837,18 @@ static void
+@@ -1831,22 +1831,34 @@ init_ptpages(tt_entry_t *tt, vm_map_address_t start, vm_map_address_t end, bool
+  * Use the otherwise empty 32MB block above low globals and below gVirtBase
+  * for a Normal-NC framebuffer alias that survives bootstrap TTBR0 teardown.
+  */
++#if defined(__ARM_16K_PG__)
+ #define SWEET_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + ARM_TT_L2_SIZE)
++#else
++/*
++ * S62 (4K pages, non-LARGE_MEMORY layout): VM_MIN_KERNEL_ADDRESS is in an L1
++ * entry (1 GiB) that has no table yet. Use the gap between the low globals
++ * (LOW_GLOBAL_BASE_ADDRESS, one 2MB block) and gVirtBase instead; it shares
++ * the kernel's L1 entry, whose L2 table already exists.
++ */
++#define SWEET_EARLY_FB_VA (LOW_GLOBAL_BASE_ADDRESS + 0x1000000ULL)
++#endif
+ 
+ static void
  sweet_early_map_final(void)
  {
  	const vm_map_address_t va = SWEET_EARLY_FB_VA;
@@ -122,7 +138,7 @@ index 06bb568..b744b42 100644
  	__asm__ volatile("dsb ishst" ::: "memory");
  }
  #endif
-@@ -2141,6 +2143,13 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+@@ -2141,6 +2153,13 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
  	 *     LOW_GLOBAL_BASE_ADDRESS + 2MB
  	 */
  	va_l1 = va_l2 = LOW_GLOBAL_BASE_ADDRESS;
