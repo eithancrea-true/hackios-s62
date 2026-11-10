@@ -1,0 +1,119 @@
+name: xnu
+
+# Builds xnu-8796 (iOS 16 generation) for the CAT S62 (SDM660, ARMv8.0, 4K pages).
+# Base: the ios-sweet patch series (fetched at a pinned commit, not copied here),
+# plus our own delta in xnu/patches/. Results (log summary + kernel) are pushed to
+# the ci-out branch so they can be read with plain git.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "xnu/patches/**"
+      - ".github/workflows/xnu.yml"
+
+concurrency:
+  group: xnu-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  DXB_REPO: https://github.com/blacktop/darwin-xnu-build
+  DXB_SHA: 663906528d1cd5ea8fde7de6f16de73db9511549
+  SWEET_REPO: https://github.com/dipa-studio/ios-sweet
+  SWEET_SHA: 45263bee51df4a0f55cdf9c649af886399488ddb
+  MACOS_VERSION: "13.5"
+  KERNEL_CONFIG: DEVELOPMENT
+  MACHINE_CONFIG: SWEET
+
+jobs:
+  build:
+    # macos-14 ships Xcode 15.x, whose iig matches the xnu-8796 IORPC ABI
+    runs-on: macos-14
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch build script and base patch series
+        run: |
+          git init -q dxb
+          git -C dxb fetch -q --depth 1 "$DXB_REPO" "$DXB_SHA"
+          git -C dxb checkout -q FETCH_HEAD
+          git init -q sweet
+          git -C sweet fetch -q --depth 1 "$SWEET_REPO" "$SWEET_SHA"
+          git -C sweet checkout -q FETCH_HEAD
+          cp sweet/xnu/patches/*.patch sweet/xnu/patches/*.sh dxb/patches/
+          cp xnu/patches/*.patch dxb/patches/
+          ls xnu/patches/*.sh >/dev/null 2>&1 && cp xnu/patches/*.sh dxb/patches/ || true
+          # libfirehose_kernel: build an arm64 slice for ARMv8.0 (the default Apple CPU
+          # emits LSE atomics, which trap on the S62's cores).
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('dxb/build.sh')
+          s = p.read_text()
+          old = 'ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"'
+          assert s.count(old) == 1, s.count(old)
+          new = 'ARCHS="arm64" VALID_ARCHS="arm64" OTHER_CFLAGS=\'$(inherited) -mcpu=cortex-a53\''
+          p.write_text(s.replace(old, new))
+          PY
+          ls dxb/patches
+
+      - name: Deps
+        run: |
+          brew install jq gum bash cmake ninja
+          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
+          sudo chmod +x /usr/local/bin/xcodes
+          sw_vers
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode_*.app | sort -V | head -1)
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Build
+        working-directory: dxb
+        env:
+          MAKEFLAGS: -k
+        run: |
+          set -o pipefail
+          bash build.sh 2>&1 | tee ../build.log
+
+      - name: Collect
+        if: always()
+        run: |
+          mkdir -p out
+          cp -R dxb/fakeroot/System/Library/Kernels/. kernels/ 2>/dev/null || mkdir -p kernels
+          ls -la kernels || true
+          for k in kernels/kernel.development.sweet; do
+            [ -f "$k" ] && xz -T0 -6 -c "$k" > out/$(basename "$k").xz
+          done
+          (cd kernels && shasum -a 256 kernel.* 2>/dev/null) > out/SHA256SUMS || true
+          # strip ANSI colors, then keep what is needed to diagnose a run
+          sed -E $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' build.log > build.clean.log || true
+          grep -n -E "Applying patch|Skipping patch|Running script" build.clean.log > out/patches.txt || true
+          grep -n -E "error:|Error [0-9]|\*\*\*|Undefined symbols|ld: " -A6 build.clean.log | head -c 3000000 > out/errors.txt || true
+          tail -n 400 build.clean.log > out/tail.txt || true
+          wc -l build.clean.log > out/loglines.txt || true
+          echo "run=${GITHUB_RUN_ID} sha=${GITHUB_SHA} status=${{ job.status }} date=$(date -u +%FT%TZ)" > out/RUN.txt
+          cat out/RUN.txt; cat out/patches.txt | tail -100; ls -la out
+
+      - name: Publish results to ci-out branch
+        if: always()
+        run: |
+          cd out
+          git init -q -b ci-out
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "ci: run ${GITHUB_RUN_ID} for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-out
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xnu-kernel
+          path: kernels/
+          if-no-files-found: warn

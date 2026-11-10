@@ -1,0 +1,249 @@
+diff --git a/makedefs/MakeInc.def b/makedefs/MakeInc.def
+index 9a748ea..8b63634 100644
+--- a/makedefs/MakeInc.def
++++ b/makedefs/MakeInc.def
+@@ -61,7 +61,8 @@ MACHINE_FLAGS_ARM64_T8103 = -DARM64_BOARD_CONFIG_T8103                  -mcpu=ap
+ MACHINE_FLAGS_ARM64_T6000 = -DARM64_BOARD_CONFIG_T6000 		-mcpu=apple-a14
+ MACHINE_FLAGS_ARM64_VMAPPLE = -DARM64_BOARD_CONFIG_VMAPPLE              -march=armv8.5a
+ MACHINE_FLAGS_ARM64_BCM2837 = -DARM64_BOARD_CONFIG_BCM2837
+-MACHINE_FLAGS_ARM64_SWEET = -DARM64_BOARD_CONFIG_SWEET                -march=armv8.2-a+crypto
++# S62 (SDM660, Kryo 260 = Cortex-A73/A53 class) is ARMv8.0: no LSE atomics, no PAN.
++MACHINE_FLAGS_ARM64_SWEET = -DARM64_BOARD_CONFIG_SWEET                -mcpu=cortex-a53+crypto
+ 
+ 
+ #
+@@ -337,6 +338,14 @@ ARM64_PLKSEG_ADDR  =0xfffffe0004004000
+ ARM64_LINK_ADDR    =0xfffffe0007004000
+ endif
+ 
++# S62: 4K pages. The 39-bit kernel VA window of the 4K T1SZ_BOOT cannot hold the
++# ARM_LARGE_MEMORY link address, so use the standard embedded layout.
++ifeq ($(CURRENT_MACHINE_CONFIG),SWEET)
++LARGE_MEMORY_DEFINE=-UARM_LARGE_MEMORY
++ARM64_PLKSEG_ADDR  =0xfffffff004004000
++ARM64_LINK_ADDR    =0xfffffff007004000
++endif
++
+ 
+ CFLAGS_ARM64	= -Darm64 -DARM64 -D__ARM64__ -DLP64 -DPAGE_SIZE_FIXED -DVM_KERNEL_LINK_ADDRESS=$(ARM64_LINK_ADDR) \
+ 			$(LARGE_MEMORY_DEFINE) -momit-leaf-frame-pointer -fno-strict-aliasing -D__API__=v4 -mkernel
+diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
+index 00568d3..094db7d 100644
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -10981,11 +10981,14 @@ static_assert((_COMM_PAGE32_BASE_ADDRESS & ~ARM_TT_L2_OFFMASK) >= VM_MAX_ADDRESS
+  */
+ 
+ #elif (ARM_PGSHIFT == 12)
++#if !defined(ARM64_BOARD_CONFIG_SWEET)
+ /**
+  * Ensure that 64-bit devices using 4K pages can nest the commpage completely
+- * above the maximum userspace VA.
++ * above the maximum userspace VA. S62: not met with the macOS user VA layout;
++ * the nested commpage path still has to be verified on 4K.
+  */
+ static_assert((_COMM_PAGE64_BASE_ADDRESS & ~ARM_TT_L1_OFFMASK) >= MACH_VM_MAX_ADDRESS);
++#endif
+ #else
+ #error Nested shared page mapping is unsupported on this config
+ #endif
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index 06bb568..b744b42 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -1837,16 +1837,18 @@ static void
+ sweet_early_map_final(void)
+ {
+ 	const vm_map_address_t va = SWEET_EARLY_FB_VA;
+-	assert(va + ARM_TT_L2_SIZE <= gVirtBase);
++	assert(va + SWEET_FB_L2_BLOCKS * ARM_TT_L2_SIZE <= gVirtBase);
+ 	tt_entry_t l1 = cpu_tte[(va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT];
+ 	assert((l1 & (ARM_TTE_VALID | ARM_TTE_TYPE_MASK)) == (ARM_TTE_VALID | ARM_TTE_TYPE_TABLE));
+ 	tt_entry_t *l2 = (tt_entry_t *)phystokv(l1 & ARM_TTE_TABLE_MASK);
+ 	tt_entry_t *slot = &l2[(va & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT];
+-	assert(*slot == ARM_TTE_EMPTY);
+-	*slot = 0x9c000000ULL | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
+-	    ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) |
+-	    ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) |
+-	    ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX;
++	for (unsigned int i = 0; i < SWEET_FB_L2_BLOCKS; i++) {
++		assert(slot[i] == ARM_TTE_EMPTY);
++		slot[i] = ((uint64_t)SWEET_FB_PA + i * ARM_TT_L2_SIZE) | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
++		    ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) |
++		    ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) |
++		    ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX;
++	}
+ 	__asm__ volatile("dsb ishst" ::: "memory");
+ }
+ #endif
+@@ -2141,6 +2143,13 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 	 *     LOW_GLOBAL_BASE_ADDRESS + 2MB
+ 	 */
+ 	va_l1 = va_l2 = LOW_GLOBAL_BASE_ADDRESS;
++#if defined(SWEET) && !defined(__ARM_16K_PG__)
++	/*
++	 * 4K pages: an L1 entry covers 1 GiB, so the low globals do not share the
++	 * kernel's L1 entry and nothing has allocated their L2 table yet.
++	 */
++	init_ptpages(cpu_tte, va_l1, va_l1 + ARM_TT_L2_SIZE, TRUE, ARM_TTE_TABLE_PXN | ARM_TTE_TABLE_XN);
++#endif
+ 	cpu_l1_tte = cpu_tte + ((va_l1 & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT);
+ 	cpu_l2_tte = ((tt_entry_t *) phystokv(((*cpu_l1_tte) & ARM_TTE_TABLE_MASK))) + ((va_l2 & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT);
+ 	ptpage_vaddr = alloc_ptpage(TRUE);
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+index 023086f..f139d93 100644
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -515,10 +515,10 @@ LEXT(start_first_cpu)
+ 
+ #if defined(SWEET)
+ 	/* Stage 0: white 64x32 band, no stack or page tables needed. */
+-	MOV64	x0, (0x9c000000 + 2368 * 4320)
++	MOV64	x0, (SWEET_FB_PA + (SWEET_FB_HEIGHT - 32) * SWEET_FB_STRIDE_BYTES)
+ 	mov		w1, #-1
+ 	mov		x2, #32
+-	mov		x4, #4320
++	mov		x4, #SWEET_FB_STRIDE_BYTES
+ Lsweet_mark_row:
+ 	mov		x3, #64
+ 	mov		x5, x0
+@@ -686,13 +686,20 @@ Lkernelcache_base_found:
+ 	 * SWEET uses 16K pages and all bring-up RAM is below 4GB, so the first
+ 	 * V=P L2 page is bootstrap_pagetables + 2*PGBYTES.
+ 	 */
+-	MOV64	x10, 0x9c000000
++	/* S62 (4K pages): the framebuffer needs SWEET_FB_L2_BLOCKS 2MB blocks. */
++	MOV64	x10, SWEET_FB_PA
+ 	MOV64	x11, (ARM_TTE_TYPE_BLOCK | ARM_TTE_VALID | ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) | ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) | ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX)
+ 	orr		x11, x11, x10
+ 	and		x12, x10, #(ARM_TT_L2_INDEX_MASK)
+ 	lsr		x12, x12, #(ARM_TT_L2_SHIFT)
+ 	add		x13, x25, #(2 * PGBYTES)
+-	str		x11, [x13, x12, lsl #TTE_SHIFT]
++	add		x13, x13, x12, lsl #TTE_SHIFT
++	mov		x12, #SWEET_FB_L2_BLOCKS
++Lsweet_fb_block:
++	str		x11, [x13], #8
++	add		x11, x11, #0x200000					// 2MB: one 4K-granule L2 block
++	subs	x12, x12, #1
++	b.ne	Lsweet_fb_block
+ #endif
+ 
+ 	/* Ensure TTEs are visible */
+diff --git a/osfmk/arm64/sweet_early.c b/osfmk/arm64/sweet_early.c
+index 6928957..11689c2 100644
+--- a/osfmk/arm64/sweet_early.c
++++ b/osfmk/arm64/sweet_early.c
+@@ -11,11 +11,11 @@
+ #include <stdint.h>
+ #include <kern/misc_protos.h>
+ 
+-static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
++static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)SWEET_FB_PA;
+ #define EARLY_FB early_fb
+ #define EARLY_WIDTH 1080u
+-#define EARLY_HEIGHT 2400u
+-#define EARLY_STRIDE (4320u / 4)
++#define EARLY_HEIGHT ((unsigned int)SWEET_FB_HEIGHT)
++#define EARLY_STRIDE ((unsigned int)SWEET_FB_STRIDE_BYTES / 4)
+ #define EARLY_SCALE 2u
+ #define EARLY_CELL_W (8u * EARLY_SCALE)
+ #define EARLY_CELL_H (16u * EARLY_SCALE)
+diff --git a/osfmk/kern/zalloc.c b/osfmk/kern/zalloc.c
+index 182b44a..77e0f37 100644
+--- a/osfmk/kern/zalloc.c
++++ b/osfmk/kern/zalloc.c
+@@ -160,7 +160,8 @@ ZONE_DEFINE_TYPE(percpu_u64_zone, "percpu.64", uint64_t,
+ #define ZONE_GUARD_SPARSE       (64  * 1024)
+ #endif /* ZSECURITY_CONFIG(SAD_FENG_SHUI) */
+ 
+-#if XNU_PLATFORM_MacOSX
++/* S62: 39-bit kernel VA (4K pages) cannot hold the 128 GiB macOS zone range. */
++#if XNU_PLATFORM_MacOSX && !defined(ARM64_BOARD_CONFIG_SWEET)
+ #define ZONE_MAP_MAX            (32ULL << 30)
+ #define ZONE_MAP_VA_SIZE        (128ULL << 30)
+ #else /* XNU_PLATFORM_MacOSX */
+diff --git a/osfmk/vm/vm_compressor.c b/osfmk/vm/vm_compressor.c
+index 1e7ca07..24f3652 100644
+--- a/osfmk/vm/vm_compressor.c
++++ b/osfmk/vm/vm_compressor.c
+@@ -150,7 +150,7 @@ boolean_t validate_c_segs = TRUE;
+  * the boot-arg & device-tree code.
+  */
+ 
+-#if !XNU_TARGET_OS_OSX
++#if !XNU_TARGET_OS_OSX || defined(ARM64_BOARD_CONFIG_SWEET)
+ 
+ #if CONFIG_FREEZE
+ int     vm_compressor_mode = VM_PAGER_FREEZER_DEFAULT;
+@@ -1053,7 +1053,7 @@ vm_compressor_init(void)
+ 
+ 	assert((C_SEGMENTS_PER_PAGE * sizeof(union c_segu)) == PAGE_SIZE);
+ 
+-#if !XNU_TARGET_OS_OSX
++#if !XNU_TARGET_OS_OSX || defined(ARM64_BOARD_CONFIG_SWEET)
+ 	vm_compressor_minorcompact_threshold_divisor = 20;
+ 	vm_compressor_majorcompact_threshold_divisor = 30;
+ 	vm_compressor_unthrottle_threshold_divisor = 40;
+@@ -5327,7 +5327,7 @@ done:
+ 		vm_swap_consider_defragmenting(VM_SWAP_FLAGS_NONE);
+ 	}
+ 
+-#if !XNU_TARGET_OS_OSX
++#if !XNU_TARGET_OS_OSX || defined(ARM64_BOARD_CONFIG_SWEET)
+ 	if ((c_minor_count && COMPRESSOR_NEEDS_TO_MINOR_COMPACT()) || vm_compressor_needs_to_major_compact()) {
+ 		vm_wake_compactor_swapper();
+ 	}
+diff --git a/osfmk/vm/vm_compressor_backing_store.c b/osfmk/vm/vm_compressor_backing_store.c
+index a645750..bab405b 100644
+--- a/osfmk/vm/vm_compressor_backing_store.c
++++ b/osfmk/vm/vm_compressor_backing_store.c
+@@ -132,7 +132,7 @@ extern int vnode_getwithref(struct vnode* vp);
+ 
+ boolean_t vm_swap_force_defrag = FALSE, vm_swap_force_reclaim = FALSE;
+ 
+-#if !XNU_TARGET_OS_OSX
++#if !XNU_TARGET_OS_OSX || defined(ARM64_BOARD_CONFIG_SWEET)
+ 
+ /*
+  * For CONFIG_FREEZE, we scale the c_segments_limit based on the
+@@ -467,7 +467,7 @@ vm_compressor_swap_init(void)
+ 
+ 	queue_init(&swf_global_queue);
+ 
+-#if !XNU_TARGET_OS_OSX
++#if !XNU_TARGET_OS_OSX || defined(ARM64_BOARD_CONFIG_SWEET)
+ 	/*
+ 	 * dummy value until the swap file gets created
+ 	 * when we drive the first c_segment_t to the
+@@ -1605,7 +1605,7 @@ vm_swap_create_file()
+ 			lck_mtx_unlock(&vm_swap_data_lock);
+ 
+ 			thread_wakeup((event_t) &vm_num_swap_files);
+-#if !XNU_TARGET_OS_OSX
++#if !XNU_TARGET_OS_OSX || defined(ARM64_BOARD_CONFIG_SWEET)
+ 			if (vm_num_swap_files == 1) {
+ 				c_overage_swapped_limit = (uint32_t)size / c_seg_bufsize;
+ 
+diff --git a/pexpert/pexpert/arm64/SWEET.h b/pexpert/pexpert/arm64/SWEET.h
+index b99c2f4..7f60472 100644
+--- a/pexpert/pexpert/arm64/SWEET.h
++++ b/pexpert/pexpert/arm64/SWEET.h
+@@ -33,8 +33,15 @@
+ #define __ARM_DEBUG__             7
+ #define __ARM_ENABLE_SWAP__       1
+ #define __ARM_V8_CRYPTO_EXTENSIONS__ 1
+-#define __ARM_PAN_AVAILABLE__     1
+-#define __ARM_16K_PG__            1
++/* S62 (SDM660): ARMv8.0 cores without 16K granule support and without PAN. */
++
++/* Splash framebuffer left by ABL (stock DTB: splash_region@9d400000). */
++#define SWEET_FB_PA               0x9d400000
++#define SWEET_FB_WIDTH            1080
++#define SWEET_FB_HEIGHT           2160
++#define SWEET_FB_STRIDE_BYTES     4320
++/* 2MB (4K L2) blocks needed to cover width*height*4 = 9.33MB */
++#define SWEET_FB_L2_BLOCKS        5
+ 
+ #define HAS_GIC_V3                1
+ 
