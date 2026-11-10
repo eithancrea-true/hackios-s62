@@ -27,6 +27,52 @@ index 9a748ea..8b63634 100644
  
  CFLAGS_ARM64	= -Darm64 -DARM64 -D__ARM64__ -DLP64 -DPAGE_SIZE_FIXED -DVM_KERNEL_LINK_ADDRESS=$(ARM64_LINK_ADDR) \
  			$(LARGE_MEMORY_DEFINE) -momit-leaf-frame-pointer -fno-strict-aliasing -D__API__=v4 -mkernel
+diff --git a/osfmk/arm/commpage/commpage_asm.s b/osfmk/arm/commpage/commpage_asm.s
+index da0bbba..0d2d072 100644
+--- a/osfmk/arm/commpage/commpage_asm.s
++++ b/osfmk/arm/commpage/commpage_asm.s
+@@ -273,7 +273,20 @@ _pfz_trylock_and_enqueue:
+ 	mov		w11, #1			 // locked value = w11 = 1
+ 
+ 	// Try to grab the lock
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	/* S62 is ARMv8.0 (no LSE casa): same compare-and-swap with LL/SC. w10 = old value. */
++Lpfz_cas_enq:
++	ldaxr	w10, [x3]
++	cbnz	w10, Lpfz_cas_enq_busy
++	stxr	w9, w11, [x3]
++	cbnz	w9, Lpfz_cas_enq
++	b		Lpfz_cas_enq_done
++Lpfz_cas_enq_busy:
++	clrex
++Lpfz_cas_enq_done:
++#else
+ 	casa	w10, w11, [x3]	 // Atomic CAS with acquire barrier
++#endif
+ 	cbz		w10, Ltrylock_enqueue_success
+ 
+ 	mov		x0, #-1			// Failed
+@@ -323,7 +336,20 @@ _pfz_trylock_and_dequeue:
+ 	mov		w10, wzr		 // unlock value = w10 = 0
+ 	mov		w11, #1			 // locked value = w11 = 1
+ 
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	/* S62 is ARMv8.0 (no LSE casa): same compare-and-swap with LL/SC. w10 = old value. */
++Lpfz_cas_deq:
++	ldaxr	w10, [x2]
++	cbnz	w10, Lpfz_cas_deq_busy
++	stxr	w9, w11, [x2]
++	cbnz	w9, Lpfz_cas_deq
++	b		Lpfz_cas_deq_done
++Lpfz_cas_deq_busy:
++	clrex
++Lpfz_cas_deq_done:
++#else
+ 	casa	w10, w11, [x2]	 // Atomic CAS with acquire barrier
++#endif
+ 	cbz		w10, Ltrylock_dequeue_success
+ 
+ 	mov		x0, #-1			// Failed
 diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
 index 00568d3..094db7d 100644
 --- a/osfmk/arm/pmap/pmap.c

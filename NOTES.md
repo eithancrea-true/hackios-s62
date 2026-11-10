@@ -27,6 +27,15 @@
   hay que desactivarlos o portarlos; falta driver eMMC/SDHCI.
 - El script de build omite en silencio parches que no aplican: revisar `patches.txt` en `ci-out`.
 
+- Indicio en contra del userland iOS 16: el propio xnu-8796 usa `casa` (LSE, ARMv8.1) sin
+  condición en el commpage, es decir, Apple da LSE por hecho en esa generación. Es probable
+  que los binarios de iOS 16 también; haría falta emular LSE en el kernel (trap) o usar un
+  userland más antiguo.
+
+## Historial CI
+- Run 42924895413 (macos-15, Xcode 16.0): los 81 parches + 9000 aplican; un único error de
+  compilación en todo el kernel (`casa` en commpage_asm.s). Corregido con LL/SC.
+
 ## Siguiente
 1. Que la compilación CI termine (ver rama `ci-out`: RUN.txt, patches.txt, errors.txt).
 2. Arrancar el kernel en QEMU (`-cpu cortex-a53`, 4K) antes de probar en el teléfono.
