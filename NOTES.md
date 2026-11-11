@@ -60,6 +60,15 @@
   línea `S62 EARLY` y hacer la reescritura en el sitio correcto en vez de tras 5 s).
   GIC: ARM GIC-500 (IIDR 0x1143b), 5 bits de prioridad, SecurityExtn=1.
 
+- dd1685f + flash en boot_b (2026-11-10 20:59): driver eMMC en hardware. SDCC1 vivo:
+  GCC apps 0x4221/ahb 0x20008001 (encendidos), SDHCI v3.0 (ver 0x6b02), pstate 0x01f800f0,
+  bus 8 bits, ADMA2-64 seleccionado, HS200 (hctl2 UHS=3), reloj de tarjeta activo.
+  Leer 0xc0c8000 REINICIA el teléfono: es el ICE (sdcc1ice@c0c8000, reloj apagado). Los
+  registros CQE están en 0xc0c5000 (reg-names: hc_mem, cqhci_mem, cqhci_ice). ADT corregido.
+- Flujo de prueba actual: el usuario usa el slot B para pruebas (A = Android stock). Se flashea
+  `boot_b` con s62_flash_b.bat (fastboot flash boot_b + set-active b + reboot).
+  userdata es compartido entre slots: para la raíz de iOS usar particiones del slot B.
+
 ## Hallazgo útil
 - PAGE_RATIO 4: el userland ve páginas de 16K aunque el hardware sea 4K (como los SoC 4K de
   Apple con más de 1GB). Reduce el riesgo de "iOS 16 sobre 4K"; el de LSE/ARMv8.0 sigue.
