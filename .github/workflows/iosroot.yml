@@ -1,0 +1,123 @@
+name: iosroot
+
+# Builds the iOS 16.7.16 (iPhone X, 20H392) HFS+ root for the S62 "ios" partition,
+# with ios-sweet's mkiosroot.sh + sweet-root-tweaks.py, as an Android sparse image.
+#
+# The result contains Apple's iOS and must not be published: it is compressed and
+# ENCRYPTED to keys/s62-root.pub.pem before upload (AES-256-CTR with a random key,
+# that key wrapped with RSA-OAEP). Only the owner's private key, which never leaves
+# their PC, can decrypt it. The artifact expires after 2 days.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iosroot
+  cancel-in-progress: false
+
+env:
+  IPSW_URL: https://updates.cdn-apple.com/2025FallFCS/fullrestores/122-77006/1158E502-D76D-4226-AA06-ED5E30CD1111/iPhone10,3,iPhone10,6_16.7.16_20H392_Restore.ipsw
+  OS_DMG: 087-86698-044.dmg        # BuildManifest: OS
+  SYSOS_DMG: 087-86593-047.dmg     # Cryptex1,SystemOS
+  APPOS_DMG: 087-86715-047.dmg     # Cryptex1,AppOS
+  SWEET_REPO: https://github.com/dipa-studio/ios-sweet
+  SWEET_SHA: 45263bee51df4a0f55cdf9c649af886399488ddb
+  APFS_FUSE_REPO: https://github.com/sgan81/apfs-fuse
+  APFS_FUSE_SHA: 66b86bd525e8cb90f9012543be89b1f092b75cf3
+  W: /mnt/w
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo mkdir -p "$W" && sudo chown "$USER" "$W"
+          df -h / /mnt
+
+      - name: Deps (hfsprogs, libsparse, fuse, hfsplus module)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q hfsprogs rsync android-sdk-libsparse-utils fuse3 libfuse3-dev \
+            cmake libbz2-dev zlib1g-dev libattr1-dev zstd
+          sudo apt-get install -y -q "linux-modules-extra-$(uname -r)" || true
+          sudo modprobe hfsplus
+          grep hfsplus /proc/filesystems
+
+      - name: apfs-fuse (pinned)
+        run: |
+          git init -q "$W/apfs-fuse"
+          git -C "$W/apfs-fuse" fetch -q --depth 1 "$APFS_FUSE_REPO" "$APFS_FUSE_SHA"
+          git -C "$W/apfs-fuse" checkout -q FETCH_HEAD
+          git -C "$W/apfs-fuse" submodule update -q --init --recursive
+          cmake -S "$W/apfs-fuse" -B "$W/apfs-fuse/build" -DUSE_FUSE3=ON
+          make -C "$W/apfs-fuse/build" -j"$(nproc)" apfs-fuse
+          sudo install "$W/apfs-fuse/build/apfs-fuse" /usr/local/bin/
+
+      - name: ios-sweet tools (pinned)
+        run: |
+          git init -q "$W/sweet"
+          git -C "$W/sweet" fetch -q --depth 1 "$SWEET_REPO" "$SWEET_SHA"
+          git -C "$W/sweet" checkout -q FETCH_HEAD
+
+      - name: Download OS and cryptex images from Apple (only those members)
+        working-directory: ${{ env.W }}
+        run: |
+          for m in "$APPOS_DMG" "$SYSOS_DMG" "$OS_DMG"; do
+            python3 sweet/tools/remotezip.py "$IPSW_URL" "$m" ipsw | tail -1
+          done
+          ls -la ipsw
+
+      - name: Build HFS+ root (mkiosroot.sh)
+        working-directory: ${{ env.W }}
+        run: |
+          bash sweet/tools/mkiosroot.sh ipsw/$OS_DMG ipsw/$SYSOS_DMG ipsw/$APPOS_DMG ios16-root.img 16G 2>&1 | grep -v '^linked ' | tail -40
+          rm -rf ipsw
+
+      - name: Bring-up tweaks (sweet-root-tweaks.py)
+        working-directory: ${{ env.W }}
+        run: |
+          sudo fsck.hfsplus -fy ios16-root.img | tail -3 || true
+          sudo mkdir -p /mnt/iosroot
+          sudo mount -t hfsplus -o loop,force ios16-root.img /mnt/iosroot
+          sudo python3 sweet/tools/sweet-root-tweaks.py /mnt/iosroot
+          df -h /mnt/iosroot
+          sudo umount /mnt/iosroot
+          sudo fsck.hfsplus -fy ios16-root.img | tail -3 || true
+          sudo fsck.hfsplus -fn ios16-root.img | tail -3
+
+      - name: Sparse image, compress, encrypt
+        working-directory: ${{ env.W }}
+        run: |
+          set +x
+          img2simg ios16-root.img ios16-root.simg
+          rm ios16-root.img
+          mkdir out
+          sha256sum ios16-root.simg | sed 's/ .*/  ios16-root.simg/' > out/SHA256-plain.txt
+          stat -c '%s ios16-root.simg' ios16-root.simg >> out/SHA256-plain.txt
+          KEY=$(openssl rand -hex 32); IV=$(openssl rand -hex 16)
+          echo "::add-mask::$KEY"
+          zstd -T0 -6 -c ios16-root.simg | openssl enc -aes-256-ctr -K "$KEY" -iv "$IV" -out out/ios16-root.simg.zst.enc
+          rm ios16-root.simg
+          printf '%s %s\n' "$KEY" "$IV" | openssl pkeyutl -encrypt -pubin -inkey "$GITHUB_WORKSPACE/keys/s62-root.pub.pem" \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -out out/key.rsa
+          unset KEY IV
+          ls -la out; cat out/SHA256-plain.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios16-root-encrypted
+          path: ${{ env.W }}/out/
+          retention-days: 2
+          compression-level: 0
