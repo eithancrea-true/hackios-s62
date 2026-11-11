@@ -1,0 +1,508 @@
+147:[warning] Skipping patch /Users/runner/work/hackios-s62/hackios-s62/dxb/patches/iobuffermemd_monterey.patch (already upstream, previously applied, or malformed): error: patch failed: iokit/Kernel/IOBufferMemoryDescriptor.cpp:332
+148:error: iokit/Kernel/IOBufferMemoryDescriptor.cpp: patch does not apply
+149- ⇒ Applying patch: /Users/runner/work/hackios-s62/hackios-s62/dxb/patches/kas_info.patch
+150- ⇒ Applying patch: /Users/runner/work/hackios-s62/hackios-s62/dxb/patches/machine_routines.patch
+151:[warning] Skipping patch /Users/runner/work/hackios-s62/hackios-s62/dxb/patches/skywalk_sonoma.patch (already upstream, previously applied, or malformed): error: patch failed: bsd/skywalk/packet/os_packet.h:883
+152:error: bsd/skywalk/packet/os_packet.h: patch does not apply
+153- ⇒ Applying patch: /Users/runner/work/hackios-s62/hackios-s62/dxb/patches/skywalk_ventura.patch
+154-/Users/runner/work/hackios-s62/hackios-s62/dxb/patches/skywalk_ventura.patch:85: trailing whitespace.
+155-	
+156-warning: 1 line adds whitespace errors.
+157:[warning] Skipping patch /Users/runner/work/hackios-s62/hackios-s62/dxb/patches/syntax_checker_sonoma.patch (already upstream, previously applied, or malformed): error: patch failed: tools/lldbmacros/core/syntax_checker.py:1
+158:error: tools/lldbmacros/core/syntax_checker.py: patch does not apply
+159- ⇒ Applying patch: /Users/runner/work/hackios-s62/hackios-s62/dxb/patches/syntax_checker_ventura.patch
+160:[warning] Skipping patch /Users/runner/work/hackios-s62/hackios-s62/dxb/patches/TrustCache.patch (already upstream, previously applied, or malformed): error: EXTERNAL_HEADERS/TrustCache/API.h: already exists in working directory
+161:error: EXTERNAL_HEADERS/TrustCache/RawTypes.h: already exists in working directory
+162:error: EXTERNAL_HEADERS/TrustCache/Return.h: already exists in working directory
+163:error: EXTERNAL_HEADERS/TrustCache/Types.h: already exists in working directory
+164:error: EXTERNAL_HEADERS/TrustCache/TypesConfig.h: already exists in working directory
+165- ⇒ Creating virtual environment
+166-[info] Activating virtual environment
+167-find: /Users/runner/work/hackios-s62/hackios-s62/dxb/fakeroot: No such file or directory
+168- ⇒ 📦 Building bootstrap_cmds
+169-Cloning into '/Users/runner/work/hackios-s62/hackios-s62/dxb/bootstrap_cmds'...
+170-Command line invocation:
+--
+3839:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][2](clscook_ELF64.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3840:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][3](clscook.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3841:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][5](cook.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3842:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][6](data.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3843:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][7](gelf.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3844:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][8](getehdr.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3845:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][9](getident.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3846:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][10](getscn.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3847:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][11](getshdr.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3848:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][12](input.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3849:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][13](kind.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3850:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][14](ndxscn.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3851:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][15](nextscn.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3852:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][16](strptr.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3853:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][17](xlate.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3854:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][18](begin.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3855:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][19](end.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3856:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][20](error.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3857:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][21](getdata.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3858:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[x86_64][23](xlate64.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3859:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/dtrace.build/Release/ctfdump.build/Objects-normal/x86_64/ctfdump_lto.o) was built for newer 'macOS' version (15.0) than being linked (12.4)
+3860-
+3861-CompileC /Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/dtrace.build/Release/ctfdump.build/Objects-normal/arm64/memory.o /Users/runner/work/hackios-s62/hackios-s62/dxb/dtrace/tools/ctfconvert/memory.c normal arm64 c com.apple.compilers.llvm.clang.1_0.compiler (in target 'ctfdump' from project 'dtrace')
+3862-    cd /Users/runner/work/hackios-s62/hackios-s62/dxb/dtrace
+3863-    
+3864-    Using response file: /Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/dtrace.build/Release/ctfdump.build/Objects-normal/arm64/7187679823f38a2a940e0043cdf9d637-common-args.resp
+3865-    
+--
+4200:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][2](clscook_ELF64.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4201:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][3](clscook.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4202:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][5](cook.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4203:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][6](data.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4204:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][7](gelf.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4205:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][8](getehdr.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4206:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][9](getident.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4207:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][10](getscn.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4208:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][11](getshdr.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4209:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][12](input.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4210:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][13](kind.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4211:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][14](ndxscn.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4212:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][15](nextscn.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4213:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][16](strptr.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4214:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][17](xlate.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4215:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][18](begin.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4216:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][19](end.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4217:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][20](error.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4218:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][21](getdata.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4219:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/UninstalledProducts/macosx/libelf.a[arm64][23](xlate64.o)) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4220:ld: warning: object file (/Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/dtrace.build/Release/ctfdump.build/Objects-normal/arm64/ctfdump_lto.o) was built for newer 'macOS' version (15.0) than being linked (12.4)
+4221-
+4222-CreateUniversalBinary /Users/runner/work/hackios-s62/hackios-s62/dxb/fakeroot/usr/local/bin/ctfdump normal arm64\ x86_64 (in target 'ctfdump' from project 'dtrace')
+4223-    cd /Users/runner/work/hackios-s62/hackios-s62/dxb/dtrace
+4224-    /Applications/Xcode_16.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo -create /Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/dtrace.build/Release/ctfdump.build/Objects-normal/arm64/Binary/ctfdump /Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.obj/dtrace.build/Release/ctfdump.build/Objects-normal/x86_64/Binary/ctfdump -output /Users/runner/work/hackios-s62/hackios-s62/dxb/fakeroot/usr/local/bin/ctfdump
+4225-
+4226-GenerateDSYMFile /Users/runner/work/hackios-s62/hackios-s62/dxb/build/dtrace.sym/Release/ctfdump.dSYM /Users/runner/work/hackios-s62/hackios-s62/dxb/fakeroot/usr/local/bin/ctfdump (in target 'ctfdump' from project 'dtrace')
+--
+273125:ld: warning: -new_linker is obsolete
+273126-                      DSYMUTIL kernel.development.sweet.dSYM
+273127-bash -c "/Applications/Xcode_16.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil --minimize  /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET//kernel.development.sweet.unstripped -o /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET//kernel.development.sweet.dSYM  2> >(grep -v '^warning:.*could not find object file symbol for symbol' 1>&2)"
+273128-                       LIBTOOL kernel.development.sweet.a
+273129-/bin/mkdir -p /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET//kernel.development.sweet.link/
+273130-/Applications/Xcode_16.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool -ca -filelist link.filelist version.o lastkerneldataconst.o lastkernelconstructor.o -o /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET//kernel.development.sweet.link/kernel.development.sweet.a
+273131-cp /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET//all-kpi.exp /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET//kernel.development.sweet.link/kernel.development.sweet.exp
+--
+273272:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert10gMetaClassE
+273273:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert10superClassE
+273274:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert11haltRestartEj
+273275:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert11sleepKernelEv
+273276:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert12CheckSubTreeEP7OSArrayP9IOServiceS3_P12OSDictionary
+273277:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert12getModelNameEPci
+273278:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert12hasPMFeatureEm
+273279:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert12publishNVRAMEv
+273280:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert13getTargetNameEPci
+273281:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert13savePanicInfoEPhy
+273282:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getBootROMTypeEv
+273283:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getChipSetTypeEv
+273284:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getConsoleInfoEP8PE_Video
+273285:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getMachineNameEPci
+273286:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getMachineTypeEv
+273287:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getProductNameEPci
+273288:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14setBootROMTypeEl
+273289:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14setChipSetTypeEl
+273290:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14setConsoleInfoEP8PE_Videoj
+273291:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14setMachineTypeEl
+273292:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15getGMTTimeOfDayEv
+273293:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15getNubResourcesEP9IOService
+273294:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15getUTCTimeOfDayEPmPj
+273295:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15setGMTTimeOfDayEl
+273296:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15setUTCTimeOfDayEmj
+273297:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert16PMRegisterDeviceEP9IOServiceS1_
+273298:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert16atInterruptLevelEv
+273299:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert16hasPrivPMFeatureEm
+273300:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert20callPlatformFunctionEPK8OSSymbolbPvS3_S3_S3_
+273301:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert21RegisterServiceInTreeEP9IOServiceP12OSDictionaryS3_S1_
+273302:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert21numBatteriesSupportedEv
+273303:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert21platformAdjustServiceEP9IOService
+273304:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert23registerNVRAMControllerEP17IONVRAMController
+273305:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert25PMInstantiatePowerDomainsEv
+273306:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert25getPhysicalRangeAllocatorEv
+273307:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert25lookUpInterruptControllerEP8OSSymbol
+273308:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert25setCPUInterruptPropertiesEP9IOService
+273309:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert0Ev
+273310:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert1Ev
+273311:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert2Ev
+273312:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert3Ev
+273313:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert4Ev
+273314:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert5Ev
+273315:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert6Ev
+273316:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert7Ev
+273317:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert8Ev
+273318:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert9Ev
+273319:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert27_RESERVEDIOPlatformExpert10Ev
+273320:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert27_RESERVEDIOPlatformExpert11Ev
+273321:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert27registerInterruptControllerEP8OSSymbolP21IOInterruptController
+273322:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert28publishPlatformUUIDAndSerialEv
+273323:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert29deregisterInterruptControllerEP8OSSymbol
+273324:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert30createSystemSerialNumberStringEP6OSData
+273325:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert5PMLogEPKcmmm
+273326:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert5startEP9IOService
+273327:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert6attachEP9IOService
+273328:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9MetaClassC1Ev
+273329:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9MetaClassC2Ev
+273330:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9configureEP9IOService
+273331:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9createNubEP12OSDictionary
+273332:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9metaClassE
+273333:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertC1EPK11OSMetaClass
+273334:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertC1Ev
+273335:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertC2EPK11OSMetaClass
+273336:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertC2Ev
+273337:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertD0Ev
+273338:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertD1Ev
+273339:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertD2Ev
+273340:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertdlEPvm
+273341:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertnwEm
+273342:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController10gMetaClassE
+273343:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController10superClassE
+273344:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController15registerServiceEj
+273345:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController4syncEv
+273346:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController6selectEj
+273347:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController9MetaClassC1Ev
+273348:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController9MetaClassC2Ev
+273349:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController9eraseBankEv
+273350:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController9metaClassE
+273351:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerC2EPK11OSMetaClass
+273352:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerD0Ev
+273353:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerD1Ev
+273354:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerD2Ev
+273355:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerdlEPvm
+273356:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllernwEm
+273357:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert10createNubsEP9IOServiceP10OSIterator
+273358:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert10gMetaClassE
+273359:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert10superClassE
+273360:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert10writeXPRAMEyPhy
+273361:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert11haltRestartEj
+273362:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert12getModelNameEPci
+273363:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert13getTargetNameEPci
+273364:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert13savePanicInfoEPhy
+273365:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert14getMachineNameEPci
+273366:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert14getProductNameEPci
+273367:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert15getNubResourcesEP9IOService
+273368:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert15processTopLevelEP15IORegistryEntry
+273369:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert17readNVRAMPropertyEP15IORegistryEntryPPK8OSSymbolPP6OSData
+273370:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert17readNVRAMPropertyEP15IORegistryEntryR11OSSharedPtrIK8OSSymbolERS2_I6OSDataE
+273371:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert18getNVRAMPartitionsEv
+273372:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert18readNVRAMPartitionEPK8OSSymbolyPhy
+273373:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert18writeNVRAMPropertyEP15IORegistryEntryPK8OSSymbolP6OSData
+273374:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert19writeNVRAMPartitionEPK8OSSymbolyPhy
+273375:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert23registerNVRAMControllerEP17IONVRAMController
+273376:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert0Ev
+273377:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert1Ev
+273378:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert2Ev
+273379:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert3Ev
+273380:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert4Ev
+273381:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert5Ev
+273382:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert6Ev
+273383:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert7Ev
+273384:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert30createSystemSerialNumberStringEP6OSData
+273385:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert5probeEP9IOServicePi
+273386:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9MetaClassC1Ev
+273387:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9MetaClassC2Ev
+273388:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9configureEP9IOService
+273389:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9createNubEP15IORegistryEntry
+273390:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9metaClassE
+273391:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9readXPRAMEyPhy
+273392:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertC2EPK11OSMetaClass
+273393:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertD0Ev
+273394:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertD1Ev
+273395:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertD2Ev
+273396:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertdlEPvm
+273397:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertnwEm
+273398:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController10gMetaClassE
+273399:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController10superClassE
+273400:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController14causeInterruptEP9IOServicei
+273401:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController15enableInterruptEP9IOServicei
+273402:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController15handleInterruptEPvP9IOServicei
+273403:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController16disableInterruptEP9IOServicei
+273404:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController16getInterruptTypeEP9IOServiceiPi
+273405:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController17registerInterruptEP9IOServiceiPvPFvS2_S2_S2_iES2_
+273406:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController18enableCPUInterruptEP5IOCPU
+273407:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController25setCPUInterruptPropertiesEP9IOService
+273408:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController26initCPUInterruptControllerEi
+273409:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController26initCPUInterruptControllerEii
+273410:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController30registerCPUInterruptControllerEv
+273411:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController1Ev
+273412:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController2Ev
+273413:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController3Ev
+273414:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController4Ev
+273415:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController5Ev
+273416:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController9MetaClassC1Ev
+273417:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController9MetaClassC2Ev
+273418:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController9metaClassE
+273419:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerC1EPK11OSMetaClass
+273420:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerC1Ev
+273421:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerC2EPK11OSMetaClass
+273422:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerC2Ev
+273423:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerD0Ev
+273424:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerD1Ev
+273425:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerD2Ev
+273426:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerdlEPvm
+273427:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllernwEm
+273428:wild: __ZN5IOCPU*, __ZN5IOCPU10gMetaClassE
+273429:wild: __ZN5IOCPU*, __ZN5IOCPU10superClassE
+273430:wild: __ZN5IOCPU*, __ZN5IOCPU11getCPUGroupEv
+273431:wild: __ZN5IOCPU*, __ZN5IOCPU11getCPUStateEv
+273432:wild: __ZN5IOCPU*, __ZN5IOCPU11setCPUStateEj
+273433:wild: __ZN5IOCPU*, __ZN5IOCPU11setPropertyEPK8OSSymbolP8OSObject
+273434:wild: __ZN5IOCPU*, __ZN5IOCPU12getCPUNumberEv
+273435:wild: __ZN5IOCPU*, __ZN5IOCPU12setCPUNumberEj
+273436:wild: __ZN5IOCPU*, __ZN5IOCPU13setPropertiesEP8OSObject
+273437:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU0Ev
+273438:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU1Ev
+273439:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU2Ev
+273440:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU3Ev
+273441:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU4Ev
+273442:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU5Ev
+273443:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU6Ev
+273444:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU7Ev
+273445:wild: __ZN5IOCPU*, __ZN5IOCPU15getCPUGroupSizeEv
+273446:wild: __ZN5IOCPU*, __ZN5IOCPU15signalCPUCancelEPS_
+273447:wild: __ZN5IOCPU*, __ZN5IOCPU16getMachProcessorEv
+273448:wild: __ZN5IOCPU*, __ZN5IOCPU17enableCPUTimeBaseEb
+273449:wild: __ZN5IOCPU*, __ZN5IOCPU17signalCPUDeferredEPS_
+273450:wild: __ZN5IOCPU*, __ZN5IOCPU5startEP9IOService
+273451:wild: __ZN5IOCPU*, __ZN5IOCPU6detachEP9IOService
+273452:wild: __ZN5IOCPU*, __ZN5IOCPU9MetaClassC1Ev
+273453:wild: __ZN5IOCPU*, __ZN5IOCPU9MetaClassC2Ev
+273454:wild: __ZN5IOCPU*, __ZN5IOCPU9metaClassE
+273455:wild: __ZN5IOCPU*, __ZN5IOCPU9signalCPUEPS_
+273456:wild: __ZN5IOCPU*, __ZN5IOCPUC2EPK11OSMetaClass
+273457:wild: __ZN5IOCPU*, __ZN5IOCPUD0Ev
+273458:wild: __ZN5IOCPU*, __ZN5IOCPUD1Ev
+273459:wild: __ZN5IOCPU*, __ZN5IOCPUD2Ev
+273460:wild: __ZN5IOCPU*, __ZN5IOCPUdlEPvm
+273461:wild: __ZN5IOCPU*, __ZN5IOCPUnwEm
+273462:wild: __ZNK16IOPlatformExpert*, __ZNK16IOPlatformExpert12getMetaClassEv
+273463:wild: __ZNK16IOPlatformExpert*, __ZNK16IOPlatformExpert14compareNubNameEPK9IOServiceP8OSStringPS4_
+273464:wild: __ZNK16IOPlatformExpert*, __ZNK16IOPlatformExpert14compareNubNameEPK9IOServiceP8OSStringR11OSSharedPtrIS3_E
+273465:wild: __ZNK16IOPlatformExpert*, __ZNK16IOPlatformExpert9MetaClass5allocEv
+273466:wild: __ZNK18IODTPlatformExpert*, __ZNK18IODTPlatformExpert12getMetaClassEv
+273467:wild: __ZNK18IODTPlatformExpert*, __ZNK18IODTPlatformExpert14compareNubNameEPK9IOServiceP8OSStringPS4_
+273468:wild: __ZNK18IODTPlatformExpert*, __ZNK18IODTPlatformExpert9MetaClass5allocEv
+273469:wild: __ZNK24IOCPUInterruptController*, __ZNK24IOCPUInterruptController12getMetaClassEv
+273470:wild: __ZNK24IOCPUInterruptController*, __ZNK24IOCPUInterruptController9MetaClass5allocEv
+273471:wild: __ZNK5IOCPU*, __ZNK5IOCPU11getPropertyEPK8OSSymbol
+273472:wild: __ZNK5IOCPU*, __ZNK5IOCPU12getMetaClassEv
+273473:wild: __ZNK5IOCPU*, __ZNK5IOCPU19serializePropertiesEP11OSSerialize
+273474:wild: __ZNK5IOCPU*, __ZNK5IOCPU9MetaClass5allocEv
+273475-[arm64      sweet]      SYMSET BSDKernel (arm64)
+273476-/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/SETUP/kextsymboltool/kextsymboltool -arch arm64 -import /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/config/allsymbols -export /Users/runner/work/hackios-s62/hackios-s62/dxb/xnu/config//BSDKernel.exports -export /Users/runner/work/hackios-s62/hackios-s62/dxb/xnu/config//BSDKernel.arm64.exports -export /Users/runner/work/hackios-s62/hackios-s62/dxb/xnu/config//BSDKernel.arm64.MacOSX.exports -output /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/config/BSDKernel.symbolset 
+273477-                     INSTALLPY core/caching.py
+273478-/bin/mkdir -p /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/kernel.development.sweet.dSYM/Contents/Resources/Python/lldbmacros/core/ ./pydir/core/
+273479-                     INSTALLPY core/collections.py
+273480-/bin/mkdir -p /Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/kernel.development.sweet.dSYM/Contents/Resources/Python/lldbmacros/core/ ./pydir/core/
+--
+273531:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert10gMetaClassE
+273532:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert10superClassE
+273533:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert11haltRestartEj
+273534:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert11sleepKernelEv
+273535:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert12CheckSubTreeEP7OSArrayP9IOServiceS3_P12OSDictionary
+273536:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert12getModelNameEPci
+273537:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert12hasPMFeatureEm
+273538:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert12publishNVRAMEv
+273539:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert13getTargetNameEPci
+273540:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert13savePanicInfoEPhy
+273541:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getBootROMTypeEv
+273542:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getChipSetTypeEv
+273543:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getConsoleInfoEP8PE_Video
+273544:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getMachineNameEPci
+273545:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getMachineTypeEv
+273546:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14getProductNameEPci
+273547:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14setBootROMTypeEl
+273548:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14setChipSetTypeEl
+273549:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14setConsoleInfoEP8PE_Videoj
+273550:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert14setMachineTypeEl
+273551:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15getGMTTimeOfDayEv
+273552:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15getNubResourcesEP9IOService
+273553:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15getUTCTimeOfDayEPmPj
+273554:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15setGMTTimeOfDayEl
+273555:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert15setUTCTimeOfDayEmj
+273556:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert16PMRegisterDeviceEP9IOServiceS1_
+273557:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert16atInterruptLevelEv
+273558:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert16hasPrivPMFeatureEm
+273559:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert20callPlatformFunctionEPK8OSSymbolbPvS3_S3_S3_
+273560:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert21RegisterServiceInTreeEP9IOServiceP12OSDictionaryS3_S1_
+273561:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert21numBatteriesSupportedEv
+273562:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert21platformAdjustServiceEP9IOService
+273563:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert23registerNVRAMControllerEP17IONVRAMController
+273564:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert25PMInstantiatePowerDomainsEv
+273565:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert25getPhysicalRangeAllocatorEv
+273566:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert25lookUpInterruptControllerEP8OSSymbol
+273567:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert25setCPUInterruptPropertiesEP9IOService
+273568:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert0Ev
+273569:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert1Ev
+273570:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert2Ev
+273571:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert3Ev
+273572:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert4Ev
+273573:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert5Ev
+273574:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert6Ev
+273575:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert7Ev
+273576:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert8Ev
+273577:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert26_RESERVEDIOPlatformExpert9Ev
+273578:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert27_RESERVEDIOPlatformExpert10Ev
+273579:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert27_RESERVEDIOPlatformExpert11Ev
+273580:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert27registerInterruptControllerEP8OSSymbolP21IOInterruptController
+273581:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert28publishPlatformUUIDAndSerialEv
+273582:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert29deregisterInterruptControllerEP8OSSymbol
+273583:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert30createSystemSerialNumberStringEP6OSData
+273584:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert5PMLogEPKcmmm
+273585:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert5startEP9IOService
+273586:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert6attachEP9IOService
+273587:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9MetaClassC1Ev
+273588:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9MetaClassC2Ev
+273589:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9configureEP9IOService
+273590:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9createNubEP12OSDictionary
+273591:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpert9metaClassE
+273592:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertC1EPK11OSMetaClass
+273593:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertC1Ev
+273594:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertC2EPK11OSMetaClass
+273595:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertC2Ev
+273596:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertD0Ev
+273597:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertD1Ev
+273598:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertD2Ev
+273599:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertdlEPvm
+273600:wild: __ZN16IOPlatformExpert*, __ZN16IOPlatformExpertnwEm
+273601:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController10gMetaClassE
+273602:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController10superClassE
+273603:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController15registerServiceEj
+273604:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController4syncEv
+273605:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController6selectEj
+273606:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController9MetaClassC1Ev
+273607:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController9MetaClassC2Ev
+273608:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController9eraseBankEv
+273609:wild: __ZN17IONVRAMController*, __ZN17IONVRAMController9metaClassE
+273610:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerC2EPK11OSMetaClass
+273611:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerD0Ev
+273612:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerD1Ev
+273613:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerD2Ev
+273614:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllerdlEPvm
+273615:wild: __ZN17IONVRAMController*, __ZN17IONVRAMControllernwEm
+273616:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert10createNubsEP9IOServiceP10OSIterator
+273617:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert10gMetaClassE
+273618:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert10superClassE
+273619:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert10writeXPRAMEyPhy
+273620:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert11haltRestartEj
+273621:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert12getModelNameEPci
+273622:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert13getTargetNameEPci
+273623:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert13savePanicInfoEPhy
+273624:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert14getMachineNameEPci
+273625:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert14getProductNameEPci
+273626:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert15getNubResourcesEP9IOService
+273627:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert15processTopLevelEP15IORegistryEntry
+273628:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert17readNVRAMPropertyEP15IORegistryEntryPPK8OSSymbolPP6OSData
+273629:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert17readNVRAMPropertyEP15IORegistryEntryR11OSSharedPtrIK8OSSymbolERS2_I6OSDataE
+273630:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert18getNVRAMPartitionsEv
+273631:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert18readNVRAMPartitionEPK8OSSymbolyPhy
+273632:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert18writeNVRAMPropertyEP15IORegistryEntryPK8OSSymbolP6OSData
+273633:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert19writeNVRAMPartitionEPK8OSSymbolyPhy
+273634:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert23registerNVRAMControllerEP17IONVRAMController
+273635:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert0Ev
+273636:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert1Ev
+273637:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert2Ev
+273638:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert3Ev
+273639:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert4Ev
+273640:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert5Ev
+273641:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert6Ev
+273642:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert28_RESERVEDIODTPlatformExpert7Ev
+273643:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert30createSystemSerialNumberStringEP6OSData
+273644:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert5probeEP9IOServicePi
+273645:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9MetaClassC1Ev
+273646:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9MetaClassC2Ev
+273647:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9configureEP9IOService
+273648:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9createNubEP15IORegistryEntry
+273649:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9metaClassE
+273650:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpert9readXPRAMEyPhy
+273651:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertC2EPK11OSMetaClass
+273652:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertD0Ev
+273653:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertD1Ev
+273654:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertD2Ev
+273655:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertdlEPvm
+273656:wild: __ZN18IODTPlatformExpert*, __ZN18IODTPlatformExpertnwEm
+273657:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController10gMetaClassE
+273658:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController10superClassE
+273659:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController14causeInterruptEP9IOServicei
+273660:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController15enableInterruptEP9IOServicei
+273661:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController15handleInterruptEPvP9IOServicei
+273662:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController16disableInterruptEP9IOServicei
+273663:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController16getInterruptTypeEP9IOServiceiPi
+273664:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController17registerInterruptEP9IOServiceiPvPFvS2_S2_S2_iES2_
+273665:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController18enableCPUInterruptEP5IOCPU
+273666:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController25setCPUInterruptPropertiesEP9IOService
+273667:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController26initCPUInterruptControllerEi
+273668:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController26initCPUInterruptControllerEii
+273669:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController30registerCPUInterruptControllerEv
+273670:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController1Ev
+273671:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController2Ev
+273672:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController3Ev
+273673:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController4Ev
+273674:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController34_RESERVEDIOCPUInterruptController5Ev
+273675:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController9MetaClassC1Ev
+273676:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController9MetaClassC2Ev
+273677:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptController9metaClassE
+273678:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerC1EPK11OSMetaClass
+273679:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerC1Ev
+273680:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerC2EPK11OSMetaClass
+273681:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerC2Ev
+273682:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerD0Ev
+273683:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerD1Ev
+273684:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerD2Ev
+273685:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllerdlEPvm
+273686:wild: __ZN24IOCPUInterruptController*, __ZN24IOCPUInterruptControllernwEm
+273687:wild: __ZN5IOCPU*, __ZN5IOCPU10gMetaClassE
+273688:wild: __ZN5IOCPU*, __ZN5IOCPU10superClassE
+273689:wild: __ZN5IOCPU*, __ZN5IOCPU11getCPUGroupEv
+273690:wild: __ZN5IOCPU*, __ZN5IOCPU11getCPUStateEv
+273691:wild: __ZN5IOCPU*, __ZN5IOCPU11setCPUStateEj
+273692:wild: __ZN5IOCPU*, __ZN5IOCPU11setPropertyEPK8OSSymbolP8OSObject
+273693:wild: __ZN5IOCPU*, __ZN5IOCPU12getCPUNumberEv
+273694:wild: __ZN5IOCPU*, __ZN5IOCPU12setCPUNumberEj
+273695:wild: __ZN5IOCPU*, __ZN5IOCPU13setPropertiesEP8OSObject
+273696:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU0Ev
+273697:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU1Ev
+273698:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU2Ev
+273699:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU3Ev
+273700:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU4Ev
+273701:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU5Ev
+273702:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU6Ev
+273703:wild: __ZN5IOCPU*, __ZN5IOCPU15_RESERVEDIOCPU7Ev
+273704:wild: __ZN5IOCPU*, __ZN5IOCPU15getCPUGroupSizeEv
+273705:wild: __ZN5IOCPU*, __ZN5IOCPU15signalCPUCancelEPS_
+273706:wild: __ZN5IOCPU*, __ZN5IOCPU16getMachProcessorEv
+273707:wild: __ZN5IOCPU*, __ZN5IOCPU17enableCPUTimeBaseEb
+273708:wild: __ZN5IOCPU*, __ZN5IOCPU17signalCPUDeferredEPS_
+273709:wild: __ZN5IOCPU*, __ZN5IOCPU5startEP9IOService
+273710:wild: __ZN5IOCPU*, __ZN5IOCPU6detachEP9IOService
+273711:wild: __ZN5IOCPU*, __ZN5IOCPU9MetaClassC1Ev
+273712:wild: __ZN5IOCPU*, __ZN5IOCPU9MetaClassC2Ev
+273713:wild: __ZN5IOCPU*, __ZN5IOCPU9metaClassE
+273714:wild: __ZN5IOCPU*, __ZN5IOCPU9signalCPUEPS_
+273715:wild: __ZN5IOCPU*, __ZN5IOCPUC2EPK11OSMetaClass
+273716:wild: __ZN5IOCPU*, __ZN5IOCPUD0Ev
+273717:wild: __ZN5IOCPU*, __ZN5IOCPUD1Ev
+273718:wild: __ZN5IOCPU*, __ZN5IOCPUD2Ev
+273719:wild: __ZN5IOCPU*, __ZN5IOCPUdlEPvm
+273720:wild: __ZN5IOCPU*, __ZN5IOCPUnwEm
+273721:wild: __ZNK16IOPlatformExpert*, __ZNK16IOPlatformExpert12getMetaClassEv
+273722:wild: __ZNK16IOPlatformExpert*, __ZNK16IOPlatformExpert14compareNubNameEPK9IOServiceP8OSStringPS4_
+273723:wild: __ZNK16IOPlatformExpert*, __ZNK16IOPlatformExpert14compareNubNameEPK9IOServiceP8OSStringR11OSSharedPtrIS3_E
+273724:wild: __ZNK16IOPlatformExpert*, __ZNK16IOPlatformExpert9MetaClass5allocEv
+273725:wild: __ZNK18IODTPlatformExpert*, __ZNK18IODTPlatformExpert12getMetaClassEv
+273726:wild: __ZNK18IODTPlatformExpert*, __ZNK18IODTPlatformExpert14compareNubNameEPK9IOServiceP8OSStringPS4_
+273727:wild: __ZNK18IODTPlatformExpert*, __ZNK18IODTPlatformExpert9MetaClass5allocEv
+273728:wild: __ZNK24IOCPUInterruptController*, __ZNK24IOCPUInterruptController12getMetaClassEv
+273729:wild: __ZNK24IOCPUInterruptController*, __ZNK24IOCPUInterruptController9MetaClass5allocEv
+273730:wild: __ZNK5IOCPU*, __ZNK5IOCPU11getPropertyEPK8OSSymbol
+273731:wild: __ZNK5IOCPU*, __ZNK5IOCPU12getMetaClassEv
+273732:wild: __ZNK5IOCPU*, __ZNK5IOCPU19serializePropertiesEP11OSSerialize
+273733:wild: __ZNK5IOCPU*, __ZNK5IOCPU9MetaClass5allocEv
+273734-/bin/mkdir -p "/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/san"
+273735-Success: Checked ./pydir/core/cvalue.py.unifdef.84095.py. No syntax errors found.
+273736-make -C "/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/san" -f "/Users/runner/work/hackios-s62/hackios-s62/dxb/xnu/san/Makefile" CURRENT_KERNEL_CONFIG=DEVELOPMENT CURRENT_ARCH_CONFIG=ARM64 CURRENT_MACHINE_CONFIG=SWEET CURRENT_BUILD_CONFIG=DEVELOPMENT^ARM64^SWEET SOURCE="/Users/runner/work/hackios-s62/hackios-s62/dxb/xnu/san/" RELATIVE_SOURCE_PATH="./san" TARGET=/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/. OBJPATH=/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET config_all;
+273737-if [ -n "/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/kernel.development.sweet.dSYM/Contents/Resources/Python/lldbmacros/" ]; then /usr/bin/touch "/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/kernel.development.sweet.dSYM/Contents/Resources/Python/lldbmacros/"; fi
+273738-Success: Checked ./pydir/core/lazytarget.py.unifdef.84114.py. No syntax errors found.
+273739-if [ -n "/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/kernel.development.sweet.dSYM/Contents/Resources/Python/lldbmacros/" ]; then /usr/bin/touch "/Users/runner/work/hackios-s62/hackios-s62/dxb/build/xnu.obj/DEVELOPMENT_ARM64_SWEET/kernel.development.sweet.dSYM/Contents/Resources/Python/lldbmacros/"; fi
