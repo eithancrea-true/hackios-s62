@@ -98,6 +98,18 @@
   Nota: fastboot de ABL se congela tras el flash grande (como en ios-sweet): usar
   !S62_FASE3_BOOT.bat (solo boot_b + set-active + reboot) tras reiniciar a fastboot.
 
+- **🎉🎉 HITO 2026-11-11 00:08: PANTALLA DE BLOQUEO DE iOS 16 (SpringBoard) EN EL CAT S62.**
+  Foto del usuario: reloj/fecha (sin hora real: "Wednesday, December 31 4:18"), fondo, botón de
+  cámara; render por CPU sin GPU, cpus=1. bluetoothd y fairplayd reinician en bucle (sin hardware
+  Apple), sin CRASH de SpringBoard/backboardd. ~15 min desde el arranque hasta la UI.
+  Imagen limpia (sweetfb_noconsole=1): s62-shim/xnu8796/s62-boot-ios-clean.img, !S62_BOOT_LIMPIO.bat.
+
+## Siguientes pasos tras el hito
+1. Táctil (Himax hxcommon, I2C 0x48 según dtbo) y botones (PMIC PM660 vía SPMI 0x800f000).
+2. Reloj: RTC del PM660 o hora por boot-arg desde el shim.
+3. SMP (8 núcleos, PSCI; MPIDR 0x0-0x3, 0x100-0x103) y GIC reescrito en el sitio correcto.
+4. Rendimiento eMMC (ya ADMA2) y USB (sweet_usb es para SM7150).
+
 ## Hallazgo útil
 - PAGE_RATIO 4: el userland ve páginas de 16K aunque el hardware sea 4K (como los SoC 4K de
   Apple con más de 1GB). Reduce el riesgo de "iOS 16 sobre 4K"; el de LSE/ARMv8.0 sigue.
