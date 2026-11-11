@@ -69,6 +69,14 @@
   `boot_b` con s62_flash_b.bat (fastboot flash boot_b + set-active b + reboot).
   userdata es compartido entre slots: para la raíz de iOS usar particiones del slot B.
 
+- c859e65 (2026-11-10 21:26): **LECTURA eMMC FUNCIONA** (ADMA2-64, 12 B/descriptor).
+  PIO no sirve en este host (buffer-read-enable atascado, puerto de datos da ceros).
+  LBA0 55aa tipo ee, GPT 69 particiones/72, boot_a "ANDROID!" en 0x40000, 4 MiB en 25 ms
+  (~160 MB/s). ICE con reloj apagado (0x80004220) no estorba al DMA legacy.
+  Layout: particiones dinámicas (super 12288M con system/vendor de ambos slots), userdata
+  105227M (inicio LBA 0x1b70000). No hay system_b: para la raíz de iOS hay que reducir
+  userdata/crear partición nueva, usar userdata entera, o usar microSD (sdhc_2).
+
 ## Hallazgo útil
 - PAGE_RATIO 4: el userland ve páginas de 16K aunque el hardware sea 4K (como los SoC 4K de
   Apple con más de 1GB). Reduce el riesgo de "iOS 16 sobre 4K"; el de LSE/ARMv8.0 sigue.
