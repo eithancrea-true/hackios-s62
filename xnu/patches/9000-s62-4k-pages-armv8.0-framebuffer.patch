@@ -1,3 +1,43 @@
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+index 2545cf9..b5230f8 100644
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -20,6 +20,7 @@
+ 
+ extern "C" void sweet_secondary_entry(void);
+ extern "C" boolean_t sweet_cpu_signal_is_enabled(unsigned int cpu);
++extern "C" void sweet_gic_dump(void);
+ 
+ class SweetCPU;
+ static SweetCPU *sweet_cpus[MAX_CPUS];
+@@ -161,12 +162,27 @@ SweetCPU::startAll(void *arg __unused, wait_result_t result __unused)
+ 			if (mach_absolute_time() > deadline) {
+ 				IOLog("SWEET CPU: cpu=%u mpidr=0x%x NOT alive after 5s\n",
+ 				    i, topology->cpus[i].phys_id);
++				sweet_gic_dump();
++				/* Keep the dump on screen before the panic log scrolls it away. */
++				nanoseconds_to_deadline(60 * NSEC_PER_SEC, &deadline);
++				while (mach_absolute_time() < deadline) {
++				}
+ 				panic("SWEET CPU: cpu=%u startup timeout (reset/MMU/GIC/SGI)", i);
+ 			}
++			/*
++			 * S62 bring-up: IOSleep() needs a working timer interrupt, so a
++			 * dead GIC would hang here silently. Poll for the boot CPU instead.
++			 */
++			if (i == 0) {
++				continue;
++			}
+ 			IOSleep(1);
+ 		}
+ 		IOLog("SWEET CPU: cpu=%u mpidr=0x%x came alive; SGI1 OK\n",
+ 		    i, topology->cpus[i].phys_id);
++		if (i == 0) {
++			sweet_gic_dump();       /* reference values for a working GIC */
++		}
+ 	}
+ 	/* Publish exactly once, after every selected CPU has completed initCPU(). */
+ 	ml_cpu_init_completed();
 diff --git a/makedefs/MakeInc.def b/makedefs/MakeInc.def
 index 9a748ea..8b63634 100644
 --- a/makedefs/MakeInc.def
@@ -302,6 +342,57 @@ index a645750..bab405b 100644
  			if (vm_num_swap_files == 1) {
  				c_overage_swapped_limit = (uint32_t)size / c_seg_bufsize;
  
+diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
+index 6089db9..c3edc47 100644
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -222,6 +222,46 @@ pe_init_fiq()
+ 	__builtin_arm_isb(ISB_SY);
+ #endif /* SWEET */
+ }
++
++#if defined(SWEET)
++/*
++ * S62 bring-up: dump the GIC and timer state of the calling CPU. Called when
++ * the boot CPU never sees its self-IPI, to tell "not pending" (redistributor /
++ * distributor) from "pending but not delivered" (CPU interface / masking).
++ */
++void sweet_gic_dump(void);
++void
++sweet_gic_dump(void)
++{
++	if (!gicd_base) {
++		kprintf("S62 GIC: not initialized\n");
++		return;
++	}
++	vm_offset_t gicr_pe_base = find_gicr_pe_base();
++	kprintf("S62 GIC: GICD_CTLR=%x TYPER=%x IIDR=%x\n",
++	    gicd_read32(0x0), gicd_read32(0x4), gicd_read32(0x8));
++	kprintf("S62 GIC: GICR off=%lx TYPER=%llx WAKER=%x CTLR=%x\n",
++	    (unsigned long)(gicr_pe_base - gicr_base), gicr_read64(GICR_TYPER),
++	    gicr_read32(GICR_WAKER), gicr_read32(0x0));
++	kprintf("S62 GIC: IGROUPR0=%x ISENABLER0=%x ISPENDR0=%x ISACTIVER0=%x\n",
++	    gicr_read32(GICR_IGROUPR0), gicr_read32(GICR_ISENABLER0),
++	    gicr_read32(0x10200), gicr_read32(0x10300));
++	kprintf("S62 GIC: IPRIORITYR0=%x R4(16-19)=%x IGRPMODR0=%x\n",
++	    gicr_read32(GICR_IPRIORITYR0), gicr_read32(GICR_IPRIORITYR0 + 16), gicr_read32(0x10d00));
++	kprintf("S62 GIC: ICC_SRE=%llx IGRPEN1=%llx PMR=%llx CTLR=%llx\n",
++	    __builtin_arm_rsr64("ICC_SRE_EL1"), __builtin_arm_rsr64("ICC_IGRPEN1_EL1"),
++	    __builtin_arm_rsr64("ICC_PMR_EL1"), __builtin_arm_rsr64("ICC_CTLR_EL1"));
++	kprintf("S62 GIC: HPPIR1=%llx RPR=%llx BPR1=%llx DAIF=%llx\n",
++	    __builtin_arm_rsr64("ICC_HPPIR1_EL1"), __builtin_arm_rsr64("ICC_RPR_EL1"),
++	    __builtin_arm_rsr64("ICC_BPR1_EL1"), __builtin_arm_rsr64("DAIF"));
++	kprintf("S62 TMR: CNTV_CTL=%llx CVAL=%llx CNTVCT=%llx\n",
++	    __builtin_arm_rsr64("CNTV_CTL_EL0"), __builtin_arm_rsr64("CNTV_CVAL_EL0"),
++	    __builtin_arm_rsr64("CNTVCT_EL0"));
++	kprintf("S62 TMR: CNTP_CTL=%llx CNTFRQ=%llx CNTKCTL=%llx EL=%llx\n",
++	    __builtin_arm_rsr64("CNTP_CTL_EL0"), __builtin_arm_rsr64("CNTFRQ_EL0"),
++	    __builtin_arm_rsr64("CNTKCTL_EL1"), __builtin_arm_rsr64("CurrentEL") >> 2);
++}
++#endif /* SWEET */
+ #else
+ void
+ pe_init_fiq()
 diff --git a/pexpert/pexpert/arm64/SWEET.h b/pexpert/pexpert/arm64/SWEET.h
 index b99c2f4..7f60472 100644
 --- a/pexpert/pexpert/arm64/SWEET.h
