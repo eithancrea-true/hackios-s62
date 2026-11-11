@@ -2941,7 +2941,7 @@ index 2545cf9..09e5feb 100644
  	/* Publish exactly once, after every selected CPU has completed initCPU(). */
  	ml_cpu_init_completed();
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index a62416c..9ca8b38 100644
+index a62416c..6c45059 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -104,6 +104,10 @@ public:
@@ -2955,7 +2955,7 @@ index a62416c..9ca8b38 100644
  	uintptr_t     fPixels;          /* kernel mapping of the panel memory */
  	IOMemoryMap  *fMap;
  	SweetSurface *fSurface;         /* the panel memory as an IOSurface */
-@@ -174,8 +178,38 @@ AppleCLCD::start(IOService *provider)
+@@ -174,8 +178,43 @@ AppleCLCD::start(IOService *provider)
  		fLogicalW = SWEET_FB_LOGICAL_W;
  		fLogicalH = SWEET_FB_LOGICAL_H;
  	}
@@ -2980,6 +2980,11 @@ index a62416c..9ca8b38 100644
 +			fFitH = fHeight;
 +			fFitW = (uint32_t)((uint64_t)fLogicalW * fHeight / fLogicalH);
 +		}
++		if (fit == 2) {
++			/* Stretch to the whole panel, ignoring the aspect ratio. */
++			fFitW = fWidth;
++			fFitH = fHeight;
++		}
 +		fFitX = (fWidth - fFitW) / 2;
 +		fFitY = (fHeight - fFitH) / 2;
 +		fFitMapX = (uint16_t *)IOMallocData(sizeof(uint16_t) * fFitW);
@@ -2994,7 +2999,7 @@ index a62416c..9ca8b38 100644
  	fLock = IOLockAlloc();
  	fClients = OSArray::withCapacity(4);
  	fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, SWEET_FB_FORMAT_BGRA);
-@@ -359,6 +393,48 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -359,6 +398,48 @@ AppleCLCD::present(const uint8_t *rec)
  		if (dx < 0 || dy < 0) {
  			dx = dy = 0;
  		}
@@ -3044,7 +3049,7 @@ index a62416c..9ca8b38 100644
  		dx -= fOffX;
  		dy -= fOffY;
 diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
-index 27bc49d..9042f1a 100644
+index 27bc49d..360c021 100644
 --- a/iokit/Kernel/arm/hid/SweetHID.cpp
 +++ b/iokit/Kernel/arm/hid/SweetHID.cpp
 @@ -367,7 +367,8 @@ protected:
@@ -3057,7 +3062,7 @@ index 27bc49d..9042f1a 100644
  	bool fDown[SWEET_TOUCH_FINGERS];
  	bool fEdge[SWEET_TOUCH_FINGERS];
  	IOFixed fX[SWEET_TOUCH_FINGERS];
-@@ -434,10 +435,31 @@ SweetHIDTouch::start(IOService *provider)
+@@ -434,10 +435,35 @@ SweetHIDTouch::start(IOService *provider)
  	}
  	int native = 0;
  	PE_parse_boot_argn("sweetfb_native", &native, sizeof(native));
@@ -3088,12 +3093,16 @@ index 27bc49d..9042f1a 100644
 +		fFitH = fPanelH;
 +		fFitW = (int)((int64_t)fLogicalW * fPanelH / fLogicalH);
 +	}
++	if (fit == 2) {
++		fFitW = fPanelW;
++		fFitH = fPanelH;
++	}
 +	fFitX = (fPanelW - fFitW) / 2;
 +	fFitY = (fPanelH - fFitH) / 2;
  	/* The digitizer covers the main display (backboardd maps it 1:1). */
  	setProperty("DisplayIntegrated", kOSBooleanTrue);
  	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
-@@ -458,22 +480,33 @@ SweetHIDTouch::touch(int finger, bool down, int x, int y)
+@@ -458,22 +484,33 @@ SweetHIDTouch::touch(int finger, bool down, int x, int y)
  	if (finger < 0 || finger >= SWEET_TOUCH_FINGERS) {
  		return;
  	}
@@ -3373,6 +3382,26 @@ index 182b44a..77e0f37 100644
  #define ZONE_MAP_MAX            (32ULL << 30)
  #define ZONE_MAP_VA_SIZE        (128ULL << 30)
  #else /* XNU_PLATFORM_MacOSX */
+diff --git a/osfmk/mach/arm/vm_param.h b/osfmk/mach/arm/vm_param.h
+index c013288..1f1c52d 100644
+--- a/osfmk/mach/arm/vm_param.h
++++ b/osfmk/mach/arm/vm_param.h
+@@ -133,7 +133,14 @@ extern int PAGE_SHIFT_CONST;
+ 
+ /* system-wide values */
+ #define MACH_VM_MIN_ADDRESS_RAW 0x0ULL
+-#if defined(XNU_PLATFORM_MacOSX) || defined(XNU_PLATFORM_DriverKit)
++/*
++ * S62: with 4K hardware pages the user page tables are 3 levels deep
++ * (T0SZ 25, 39-bit VA). The 47-bit macOS limit let the VM hand out
++ * addresses the pmap cannot map (panic in pmap_remove_options from a
++ * WebKit mmap); use the embedded 64 GB limit there.
++ */
++#if (defined(XNU_PLATFORM_MacOSX) || defined(XNU_PLATFORM_DriverKit)) && \
++        !(defined(XNU_KERNEL_PRIVATE) && defined(ARM64_BOARD_CONFIG_SWEET) && !defined(__ARM_16K_PG__))
+ #define MACH_VM_MAX_ADDRESS_RAW 0x00007FFFFE000000ULL
+ #else
+ #define MACH_VM_MAX_ADDRESS_RAW 0x0000000FC0000000ULL
 diff --git a/osfmk/vm/vm_compressor.c b/osfmk/vm/vm_compressor.c
 index 1e7ca07..24f3652 100644
 --- a/osfmk/vm/vm_compressor.c
