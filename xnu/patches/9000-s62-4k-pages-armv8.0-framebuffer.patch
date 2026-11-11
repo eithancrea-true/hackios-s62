@@ -356,7 +356,7 @@ index a645750..bab405b 100644
  				c_overage_swapped_limit = (uint32_t)size / c_seg_bufsize;
  
 diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
-index 6089db9..e27aef2 100644
+index 6089db9..b35b78b 100644
 --- a/pexpert/arm/pe_fiq.c
 +++ b/pexpert/arm/pe_fiq.c
 @@ -26,6 +26,12 @@ static vm_offset_t gicd_base;
@@ -396,7 +396,7 @@ index 6089db9..e27aef2 100644
  #else
  	// Configure timers and legacy FIQ to be group 0
  	gicr_write32(GICR_IGROUPR0, 0x81FFFFFF);
-@@ -222,6 +238,82 @@ pe_init_fiq()
+@@ -222,6 +238,85 @@ pe_init_fiq()
  	__builtin_arm_isb(ISB_SY);
  #endif /* SWEET */
  }
@@ -451,6 +451,9 @@ index 6089db9..e27aef2 100644
 +		kprintf("S62 FRAME %lx: TYPER=%llx WAKER=%x EN0=%x PEND0=%x\n", (unsigned long)o,
 +		    _gic_read64(gicr_base + o + GICR_TYPER), _gic_read32(gicr_base + o + GICR_WAKER),
 +		    _gic_read32(gicr_base + o + GICR_ISENABLER0), _gic_read32(gicr_base + o + 0x10200));
++		if (_gic_read64(gicr_base + o + GICR_TYPER) & GICR_TYPER_LAST) {
++			break;
++		}
 +	}
 +	kprintf("S62 GIC: GICD_CTLR=%x TYPER=%x IIDR=%x\n",
 +	    gicd_read32(0x0), gicd_read32(0x4), gicd_read32(0x8));
