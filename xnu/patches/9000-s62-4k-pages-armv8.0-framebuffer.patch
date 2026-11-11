@@ -444,7 +444,7 @@ index a148608..4c11e3b 100644
  }
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 03defe6..3313646 100644
+index 03defe6..eed674d 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -1,9 +1,19 @@
@@ -611,10 +611,10 @@ index 03defe6..3313646 100644
 +
 +/* Diagnostics are kept and re-printed every few seconds, so one photo of the
 + * console at any time shows them (boot-arg s62tquiet=1 stops the repeats). */
-+static char t_st[14][150];
++static char t_st[20][150];
 +static unsigned t_nst;
 +#define TLOG(...) do { \
-+	char *slot_ = t_st[t_nst < 14 ? t_nst++ : 13]; \
++	char *slot_ = t_st[t_nst < 20 ? t_nst++ : 19]; \
 +	snprintf(slot_, sizeof(t_st[0]), __VA_ARGS__); \
 +	printf("S62 TOUCH: %s\n", slot_); \
 +} while (0)
@@ -679,7 +679,7 @@ index 03defe6..3313646 100644
  			return true;
  		}
  		delay(1);
-@@ -118,521 +169,732 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
+@@ -118,521 +169,1099 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
  	return false;
  }
  
@@ -694,22 +694,19 @@ index 03defe6..3313646 100644
 -		/* Set the desired latch before enabling output (reset is active low). */
 -		touch_wr(st.gpio, TOUCH_GPIO_IO(pin),
 -		    (touch_rd(st.gpio, TOUCH_GPIO_IO(pin)) & ~2u) | (high ? 2u : 0u));
--	}
++	if (!qup_state_is(0, 0)) {
++		return false;
+ 	}
 -	cfg &= ~0x3ffu;
 -	cfg |= (mux << 2) | pull | (drive << 6) | (out ? 0x200u : 0u);
 -	touch_wr(st.gpio, off, cfg);
-+	if (!qup_state_is(0, 0)) {
-+		return false;
-+	}
 +	t_wr(t.qup, QUP_STATE, state);
 +	return qup_state_is(state, 3u);
  }
  
 -static bool
 -touch_clocks(void)
-+static int
-+qup_check(void)
- {
+-{
 -	/* Vote on only wrapper1 and SE7, preserving other clock users. */
 -	uint32_t mask = (0x0fu << 18) | (1u << 23);
 -	touch_wr(st.gcc, TOUCH_GCC_VOTE, touch_rd(st.gcc, TOUCH_GCC_VOTE) | mask);
@@ -741,6 +738,9 @@ index 03defe6..3313646 100644
 -			    touch_rd(st.gcc, branches[i]));
 -			return false;
 -		}
++static int
++qup_check(void)
++{
 +	uint32_t i2c = t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ERRS;
 +	uint32_t err = t_rd(t.qup, QUP_ERROR_FLAGS) & QUP_ERRS;
 +	if (i2c || err) {
@@ -773,12 +773,12 @@ index 03defe6..3313646 100644
 +			j = 0;
  		}
 -		delay(1);
--	}
+ 	}
 -	if (!done || !touch_wait_clear(st.se, SE_STATUS, 1u)) {
 -		st.dead = true;
 -		printf("SWEET TOUCH: abort failed status=%#x irq=%#x; stopping\n",
 -		    touch_rd(st.se, SE_STATUS), touch_rd(st.se, SE_IRQ));
- 	}
+-	}
 -	/* Bound drain even if the hardware reports an impossible FIFO count. */
 -	for (unsigned i = 0; i < 64 && (touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu); ++i) {
 -		(void)touch_rd(st.se, SE_RX);
@@ -816,7 +816,13 @@ index 03defe6..3313646 100644
  {
 -	if (st.dead || nt > 3 || nr > 90 || (nt && nr) || (!nt && !nr)) {
 -		return EIO;
--	}
++	uint8_t buf[40];
++	int err;
++
++	if (wlen == 0 || wlen + 4u > sizeof(buf) || wlen + 4u > t.out_fifo ||
++	    rlen > 254u || (rlen && rlen + 2u > t.in_fifo)) {
++		return EINVAL;
+ 	}
 -	if (!touch_wait_clear(st.se, SE_STATUS, 1u)) {
 -		st.dead = true; /* no other SE7 owner is supported */
 -		return EBUSY;
@@ -844,13 +850,6 @@ index 03defe6..3313646 100644
 -				touch_wr(st.se, SE_IRQ_CLR, irq);
 -				return err;
 -			}
-+	uint8_t buf[40];
-+	int err;
-+
-+	if (wlen == 0 || wlen + 4u > sizeof(buf) || wlen + 4u > t.out_fifo ||
-+	    rlen > 254u || (rlen && rlen + 2u > t.in_fifo)) {
-+		return EINVAL;
-+	}
 +	t_wr(t.qup, QUP_SW_RESET, 1);
 +	if (!qup_state_is(QUP_ST_RESET, 3u)) {
 +		return qup_abort(ETIMEDOUT);
@@ -965,15 +964,15 @@ index 03defe6..3313646 100644
 -		touch_wr(st.se, SE_IRQ_CLR, irq & (SE_RX_WM_IRQ | SE_RX_LAST | SE_TX_WM_IRQ));
 -		delay(1);
 +		t_wr(t.qup, QUP_OPERATIONAL, QUP_IN_SVC | QUP_IN_DONE | QUP_OUT_SVC | QUP_OUT_DONE);
-+	}
+ 	}
+-	touch_abort();
+-	return err;
 +	for (unsigned i = 0; t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ACTIVE; ++i) {
 +		if (i > 1000) {
 +			return qup_abort(ETIMEDOUT);
 +		}
 +		delay(2);
- 	}
--	touch_abort();
--	return err;
++	}
 +	(void)qup_set_state(QUP_ST_RESET);
 +	return 0;
 +}
@@ -1002,17 +1001,7 @@ index 03defe6..3313646 100644
 -touch_msg(uint8_t addr, const uint8_t *tx, unsigned nt, uint8_t *rx,
 -    unsigned nr, bool stretch)
 +bb_get(uint32_t pin)
- {
--	st.irq_status = st.irq_last = 0;
--	st.sent = st.got = 0;
--	int err = touch_msg_run(addr, tx, nt, rx, nr, stretch);
--	if (st.probing) {
--		printf("SWEET TOUCH: probe xfer addr=%#x %s len=%u stretch=%u err=%d irq=%#x seen=%#x tx=%u rx=%u status=%#x\n",
--		    addr, nr ? "read" : "write", nr ? nr : nt, stretch ? 1u : 0u,
--		    err, st.irq_last, st.irq_status, st.sent, st.got,
--		    touch_rd(st.se, SE_STATUS));
--	}
--	return err;
++{
 +	return (int)(t_rd(t.sda, pin + 4u) & 1u);
 +}
 +
@@ -1032,12 +1021,21 @@ index 03defe6..3313646 100644
 +/* (Repeated) START: SDA high, SCL high, SDA low, SCL low. */
 +static bool
 +bb_start(void)
-+{
+ {
+-	st.irq_status = st.irq_last = 0;
+-	st.sent = st.got = 0;
+-	int err = touch_msg_run(addr, tx, nt, rx, nr, stretch);
+-	if (st.probing) {
+-		printf("SWEET TOUCH: probe xfer addr=%#x %s len=%u stretch=%u err=%d irq=%#x seen=%#x tx=%u rx=%u status=%#x\n",
+-		    addr, nr ? "read" : "write", nr ? nr : nt, stretch ? 1u : 0u,
+-		    err, st.irq_last, st.irq_status, st.sent, st.got,
+-		    touch_rd(st.se, SE_STATUS));
 +	bb_line(BB_SDA, 1);
 +	delay(t_bb_us);
 +	if (!bb_scl_high()) {
 +		return false;
-+	}
+ 	}
+-	return err;
 +	delay(t_bb_us);
 +	if (!bb_get(BB_SDA)) {
 +		return false;
@@ -1069,9 +1067,6 @@ index 03defe6..3313646 100644
 -	    NULL, 0, true);
 -	if (err) {
 -		return err;
--	}
--	/* STOP_STRETCH on the pointer write retains the bus for a repeated START. */
--	return touch_msg(addr, NULL, 0, buf, len, false);
 +	for (int i = 7; i >= 0; --i) {
 +		bb_line(BB_SDA, (b >> i) & 1);
 +		delay(t_bb_us);
@@ -1085,7 +1080,9 @@ index 03defe6..3313646 100644
 +	delay(t_bb_us);
 +	if (!bb_scl_high()) {
 +		return ETIMEDOUT;
-+	}
+ 	}
+-	/* STOP_STRETCH on the pointer write retains the bus for a repeated START. */
+-	return touch_msg(addr, NULL, 0, buf, len, false);
 +	delay(t_bb_us);
 +	int nack = bb_get(BB_SDA);
 +	bb_line(BB_SCL, 0);
@@ -1127,8 +1124,7 @@ index 03defe6..3313646 100644
 - * on this 16-bit IC the extra bytes would be register data writes. */
  static int
 -touch_probe_info(uint16_t reg, uint8_t *buf)
-+bb_xfer(const uint8_t *w, unsigned wlen, uint8_t *r, unsigned rlen)
- {
+-{
 -	memset(buf, 0xa5, 32);
 -	int err = touch_read(0x5d, reg, true, buf, 32);
 -	printf("SWEET TOUCH: probe info reg=%#x len=32 err=%d irq=%#x seen=%#x\n",
@@ -1138,6 +1134,8 @@ index 03defe6..3313646 100644
 -			char line[49];
 -			for (unsigned j = 0; j < 16; ++j) {
 -				(void)snprintf(line + j * 3u, 4, "%02x ", buf[off + j]);
++bb_xfer(const uint8_t *w, unsigned wlen, uint8_t *r, unsigned rlen)
++{
 +	int e;
 +	if (!bb_start()) {
 +		bb_stop();
@@ -1277,33 +1275,42 @@ index 03defe6..3313646 100644
 -	int err = touch_read(0x5d, GOODIX_EVENT_REG, true, buf, GOODIX_HEAD_LEN);
 -	if (err) {
 -		return err;
--	}
++	int e = t_xfer(&reg, 1, ev, T_EVENT_LEN);
++	if (e) {
++		return e;
+ 	}
 -	if (!(buf[0] & 0x80u)) {
 -		/* Do not acknowledge firmware/config requests that we cannot service. */
 -		if (buf[0] & 0x40u) {
 -			return ENOTSUP;
-+	int e = t_xfer(&reg, 1, ev, T_EVENT_LEN);
-+	if (e) {
-+		return e;
-+	}
+-		}
+-		return 0; /* no new touch frame: retain current contacts */
 +	unsigned sum = 0, ed = 0;
 +	for (unsigned i = 0; i < T_EVENT_LEN; ++i) {
 +		sum += ev[i];
 +		ed += (ev[i] == 0xed || ev[i] == 0xee || ev[i] == 0xec);
-+	}
+ 	}
+-	if (!touch_checksum(buf, GOODIX_HEAD_LEN)) {
+-		return EIO; /* header untrusted: no write to the IC */
 +	if (ed == T_EVENT_LEN) {
 +		return EAGAIN;          /* ESD / exception pattern */
-+	}
+ 	}
+-	unsigned n = buf[2] & 15u;
+-	if (n > TOUCH_MAX) {
+-		(void)touch_goodix_ack();
+-		return EIO;
 +	if (sum & 0xffu) {
 +		if ((t_bad_sum++ % 50u) == 0) {
 +			printf("S62 TOUCH: bad checksum %#x n=%#x first %02x%02x%02x%02x\n",
 +			    sum & 0xffu, ev[52], ev[0], ev[1], ev[2], ev[3]);
- 		}
--		return 0; /* no new touch frame: retain current contacts */
++		}
 +		return EAGAIN;
  	}
--	if (!touch_checksum(buf, GOODIX_HEAD_LEN)) {
--		return EIO; /* header untrusted: no write to the IC */
+-	if (n) {
+-		err = touch_read(0x5d, GOODIX_EVENT_REG + GOODIX_HEAD_LEN, true,
+-		    buf + GOODIX_HEAD_LEN, n * GOODIX_POINT_LEN + 2u);
+-		if (err) {
+-			return err;
 +	if (ev[52] != 0xff && (ev[52] & 0x0fu)) {
 +		for (unsigned i = 0; i < T_MAX; ++i) {
 +			unsigned px = (unsigned)ev[4 * i] << 8 | ev[4 * i + 1];
@@ -1314,25 +1321,15 @@ index 03defe6..3313646 100644
 +			x[i] = (int)px;
 +			y[i] = (int)py;
 +			mask |= 1u << i;
-+		}
- 	}
--	unsigned n = buf[2] & 15u;
--	if (n > TOUCH_MAX) {
--		(void)touch_goodix_ack();
--		return EIO;
-+	if (mask != t.active && (t_events++ < 40u || !t.active)) {
-+		printf("S62 TOUCH: n=%u mask=%#x p0=%d,%d\n", ev[52] & 0x0fu, mask,
-+		    (mask & 1u) ? x[0] : -1, (mask & 1u) ? y[0] : -1);
- 	}
--	if (n) {
--		err = touch_read(0x5d, GOODIX_EVENT_REG + GOODIX_HEAD_LEN, true,
--		    buf + GOODIX_HEAD_LEN, n * GOODIX_POINT_LEN + 2u);
--		if (err) {
--			return err;
--		}
+ 		}
 -		if (!touch_checksum(buf + GOODIX_HEAD_LEN, n * GOODIX_POINT_LEN + 2u)) {
 -			(void)touch_goodix_ack();
 -			return EIO;
++	}
++	if (mask != t.active && (t_events++ < 40u || !t.active)) {
++		printf("S62 TOUCH: n=%u mask=%#x p0=%d,%d\n", ev[52] & 0x0fu, mask,
++		    (mask & 1u) ? x[0] : -1, (mask & 1u) ? y[0] : -1);
++	}
 +	t_report(mask, x, y);
 +	return 0;
 +}
@@ -1368,41 +1365,13 @@ index 03defe6..3313646 100644
 -		    (mask & (1u << id)) || px > 1079 || py > 2399) {
 -			(void)touch_goodix_ack();
 -			return EIO;
--		}
--		mask |= 1u << id;
--		x[id] = (int)px;
--		y[id] = (int)py;
--	}
--	err = touch_goodix_ack();
--	if (!err) {
--		touch_report(mask, x, y);
--	}
--	return err;
 +	TLOG("%s LDO%s", name, line);
- }
- 
--static int
--touch_focaltech(void)
++}
++
 +/* TLMM pins that are GPIO outputs: "n+" driven high, "n-" driven low. */
 +static void
 +t_dump_gpio_outputs(void)
- {
--	uint8_t buf[63];
--	int x[TOUCH_MAX] = {0}, y[TOUCH_MAX] = {0};
--	uint32_t mask = 0, seen = 0;
--	int err = touch_read(0x38, 0, false, buf, sizeof(buf));
--	if (err) {
--		return err;
--	}
--	unsigned n = buf[2] & 15u, active = 0;
--	if ((buf[0] & 0x70u) || n > TOUCH_MAX) {
--		return EIO;
--	}
--	for (unsigned i = 0; i < TOUCH_MAX; ++i) {
--		const uint8_t *p = buf + 3u + 6u * i;
--		unsigned id = p[2] >> 4, event = p[0] >> 6;
--		if (id >= TOUCH_MAX) {
--			break; /* vendor's unused-record sentinel */
++{
 +	static const uint8_t tile[114] = {
 +		/* 0 north, 1 center, 2 south; from Linux pinctrl-sdm660.c */
 +		2,2,2,2,0,2,2,2,0,0,0,0,0,0,0,0,1,1,1,1,2,2,1,1,0,0,0,0,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,2,2,2,2,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
@@ -1415,51 +1384,263 @@ index 03defe6..3313646 100644
 +	for (unsigned n = 0; n < 114; ++n) {
 +		if (n >= 12 && n <= 15) {
 +			continue;       /* secure (external abort on hardware) */
- 		}
--		if (seen & (1u << id)) {
--			return EIO;
++		}
 +		vm_offset_t va = ml_io_map(base[tile[n]] + 0x1000u * n, 0x1000);
 +		if (!va) {
 +			continue;
- 		}
--		seen |= 1u << id;
--		if (event == 1u) {
--			continue; /* UP record */
++		}
 +		uint32_t cfg = t_rd(va, 0), io = t_rd(va, 4);
 +		if (((cfg >> 2) & 0xfu) == 0 && (cfg & (1u << 9))) {
 +			o += (size_t)snprintf(line + o, sizeof(line) - o, " %u%c", n, (io & 2u) ? '+' : '-');
- 		}
--		if (event == 3u) {
--			return EIO;
++		}
 +		if (o + 8 > sizeof(line) - 20) {
 +			TLOG("TLMM out%u:%s", part++, line);
 +			o = 0;
 +			line[0] = 0;
  		}
+-		mask |= 1u << id;
+-		x[id] = (int)px;
+-		y[id] = (int)py;
+ 	}
+-	err = touch_goodix_ack();
+-	if (!err) {
+-		touch_report(mask, x, y);
++	TLOG("TLMM out%u:%s", part, line);
++}
++
++/* ---- RPM regulators over GLINK (polled) ---------------------------------- */
++/*
++ * The PMIC LDOs belong to the RPM (SPMI owner EE 4), so they are requested
++ * like Linux does: GLINK "rpm_requests" channel in the RPM message RAM
++ * (qcom_glink_rpm.c / qcom_glink_native.c / smd-rpm.c), intentless, with the
++ * APCS IPC bit 0 as the doorbell. Everything is polled.
++ */
++#define RPM_RAM_PA      0x00778000u
++#define RPM_RAM_SIZE    0x7000u
++#define RPM_APCS_PA     0x17911000u
++
++static struct {
++	vm_offset_t ram, apcs;
++	uint32_t tx_off, tx_len, rx_off, rx_len;        /* offsets of {tail, head, fifo...} */
++	bool up, ver_ack, ropen, open_ack, data, bad;
++	uint32_t rcid, features;
++	uint8_t resp[96];
++	uint32_t resp_len;
++	char trace[48];
++} rpm;
++
++static uint32_t
++rpm_r(uint32_t off)
++{
++	return t_rd(rpm.ram, off);
++}
++
++static void
++rpm_w(uint32_t off, uint32_t v)
++{
++	t_wr(rpm.ram, off, v);
++}
++
++static uint32_t
++rpm_rx_avail(void)
++{
++	uint32_t tail = rpm_r(rpm.rx_off), head = rpm_r(rpm.rx_off + 4);
++	return head < tail ? rpm.rx_len - tail + head : head - tail;
++}
++
++/* count and offset are multiples of 4, as are the FIFO indices. */
++static void
++rpm_rx_peek(void *buf, uint32_t offset, uint32_t count)
++{
++	uint32_t tail = rpm_r(rpm.rx_off) + offset;
++	uint32_t *out = buf;
++	for (uint32_t i = 0; i < count / 4; ++i, tail += 4) {
++		if (tail >= rpm.rx_len) {
++			tail -= rpm.rx_len;
++		}
++		out[i] = rpm_r(rpm.rx_off + 8 + tail);
+ 	}
+-	return err;
+ }
+ 
+-static int
+-touch_focaltech(void)
++static void
++rpm_rx_advance(uint32_t count)
+ {
+-	uint8_t buf[63];
+-	int x[TOUCH_MAX] = {0}, y[TOUCH_MAX] = {0};
+-	uint32_t mask = 0, seen = 0;
+-	int err = touch_read(0x38, 0, false, buf, sizeof(buf));
+-	if (err) {
+-		return err;
++	uint32_t tail = rpm_r(rpm.rx_off) + count;
++	if (tail >= rpm.rx_len) {
++		tail -= rpm.rx_len;
+ 	}
+-	unsigned n = buf[2] & 15u, active = 0;
+-	if ((buf[0] & 0x70u) || n > TOUCH_MAX) {
+-		return EIO;
++	rpm_w(rpm.rx_off, tail);
++}
++
++/* buf: whole message, count a multiple of 8. */
++static bool
++rpm_tx(const void *buf, uint32_t count)
++{
++	uint32_t head = rpm_r(rpm.tx_off + 4), tail = rpm_r(rpm.tx_off);
++	uint32_t avail = tail <= head ? rpm.tx_len - head + tail : tail - head;
++	const uint32_t *in = buf;
++	if (head >= rpm.tx_len || avail <= count + 8) {
++		return false;
+ 	}
+-	for (unsigned i = 0; i < TOUCH_MAX; ++i) {
+-		const uint8_t *p = buf + 3u + 6u * i;
+-		unsigned id = p[2] >> 4, event = p[0] >> 6;
+-		if (id >= TOUCH_MAX) {
+-			break; /* vendor's unused-record sentinel */
++	for (uint32_t i = 0; i < count / 4; ++i) {
++		rpm_w(rpm.tx_off + 8 + head, in[i]);
++		head += 4;
++		if (head >= rpm.tx_len) {
++			head -= rpm.tx_len;
+ 		}
+-		if (seen & (1u << id)) {
+-			return EIO;
++	}
++	rpm_w(rpm.tx_off + 4, head);
++	t_wr(rpm.apcs, 8, 1u);          /* kick: APCS IPC bit 0 */
++	return true;
++}
++
++static bool
++rpm_cmd(uint16_t cmd, uint16_t p1, uint32_t p2)
++{
++	uint32_t m[2] = { (uint32_t)cmd | ((uint32_t)p1 << 16), p2 };
++	return rpm_tx(m, 8);
++}
++
++static void
++rpm_note(unsigned cmd)
++{
++	size_t n = strlen(rpm.trace);
++	if (n + 4 < sizeof(rpm.trace)) {
++		snprintf(rpm.trace + n, sizeof(rpm.trace) - n, "%u,", cmd);
++	}
++}
++
++/* Handle everything waiting in the RX FIFO. */
++static void
++rpm_rx(void)
++{
++	for (unsigned guard = 0; guard < 64 && !rpm.bad; ++guard) {
++		uint32_t avail = rpm_rx_avail(), m[4];
++		if (avail < 8) {
++			return;
+ 		}
+-		seen |= 1u << id;
+-		if (event == 1u) {
+-			continue; /* UP record */
++		rpm_rx_peek(m, 0, 8);
++		unsigned cmd = m[0] & 0xffffu, p1 = m[0] >> 16;
++		uint32_t p2 = m[1];
++		rpm_note(cmd);
++		switch (cmd) {
++		case 0:         /* VERSION */
++			rpm_rx_advance(8);
++			rpm.features &= p2;
++			(void)rpm_cmd(1, 1, rpm.features);
++			break;
++		case 1:         /* VERSION_ACK */
++			rpm_rx_advance(8);
++			rpm.ver_ack = true;
++			break;
++		case 2: {       /* OPEN: rcid, name length */
++			uint32_t len = 8u + ((p2 + 7u) & ~7u);
++			if (p2 > 64 || avail < len) {
++				return;
++			}
++			rpm_rx_advance(len);
++			rpm.rcid = p1;
++			rpm.ropen = true;
++			(void)rpm_cmd(4, (uint16_t)p1, 0);      /* OPEN_ACK */
++			break;
+ 		}
+-		if (event == 3u) {
+-			return EIO;
++		case 3:         /* CLOSE */
++			rpm_rx_advance(8);
++			(void)rpm_cmd(11, (uint16_t)p1, 0);
++			break;
++		case 4:         /* OPEN_ACK */
++			rpm_rx_advance(8);
++			rpm.open_ack = true;
++			break;
++		case 9:         /* TX_DATA */
++		case 12: {
++			if (avail < 16) {
++				return;
++			}
++			rpm_rx_peek(m, 0, 16);
++			uint32_t chunk = m[2], len = (16u + chunk + 7u) & ~7u;
++			if (chunk > 0x400u) {
++				rpm.bad = true;
++				return;
++			}
++			if (avail < len) {
++				return;
++			}
++			uint32_t take = (chunk + 3u) & ~3u;
++			if (take > sizeof(rpm.resp)) {
++				take = sizeof(rpm.resp);
++			}
++			rpm_rx_peek(rpm.resp, 16, take);
++			rpm.resp_len = chunk < take ? chunk : take;
++			rpm.data = true;
++			rpm_rx_advance(len);
++			break;
+ 		}
 -		unsigned px = ((unsigned)(p[0] & 15u) << 8) | p[1];
 -		unsigned py = ((unsigned)(p[2] & 15u) << 8) | p[3];
 -		if (px > 1079 || py > 2399) {
 -			return EIO;
--		}
++		case 6: case 8: case 11: case 13: case 14: case 15:
++			rpm_rx_advance(8);
++			break;
++		default:
++			rpm.bad = true;
++			return;
+ 		}
 -		mask |= 1u << id;
 -		x[id] = (int)px;
 -		y[id] = (int)py;
 -		++active;
--	}
+ 	}
 -	if (active != n) {
 -		return EIO;
++}
++
++static bool
++rpm_wait(const bool *flag, unsigned ms)
++{
++	for (unsigned i = 0; i < ms; ++i) {
++		rpm_rx();
++		if (*flag) {
++			return true;
++		}
++		if (rpm.bad) {
++			return false;
++		}
++		t_wait(1);
  	}
 -	touch_report(mask, x, y);
 -	return 0;
-+	TLOG("TLMM out%u:%s", part, line);
++	return false;
  }
  
-+/* ---- bring-up ----------------------------------------------------------- */
-+
  static bool
 -touch_se_init(void)
-+t_clocks(void)
- {
+-{
 -	uint32_t fw = touch_rd(st.se, SE_FW);
 -	uint32_t tx = touch_rd(st.se, SE_HW_TX), rx = touch_rd(st.se, SE_HW_RX);
 -	printf("SWEET TOUCH: se7 fw=%#x proto=%u status=%#x tx=%#x rx=%#x ios=%#x\n",
@@ -1470,11 +1651,19 @@ index 03defe6..3313646 100644
 -	    ((tx >> 16) & 0x3fu) < 2u || ((rx >> 16) & 0x3fu) < 2u) {
 -		printf("SWEET TOUCH: need ABL-loaded I2C firmware and 32-bit FIFOs; probes skipped\n");
 -		return false;
--	}
++rpm_bringup(void)
++{
++	if (rpm.up) {
++		return true;
+ 	}
 -	if (touch_rd(st.se, SE_STATUS) & 0x1001u) {
 -		printf("SWEET TOUCH: SE7 already busy; probes skipped\n");
--		return false;
--	}
++	rpm.ram = ml_io_map(RPM_RAM_PA, RPM_RAM_SIZE);
++	rpm.apcs = ml_io_map(RPM_APCS_PA, 0x1000);
++	if (!rpm.ram || !rpm.apcs) {
++		TLOG("RPM: mapping failed");
+ 		return false;
+ 	}
 -	touch_wr(st.se, 0xe18, 0); /* no GSI events */
 -	touch_wr(st.se, 0xe1c, 0); /* mask external IRQ routing; poll local status */
 -	touch_wr(st.se, 0x644, 0);
@@ -1505,7 +1694,112 @@ index 03defe6..3313646 100644
 -	    touch_rd(st.se, 0x284) != SE_PACK0 || touch_rd(st.se, 0x288) != SE_PACK1 ||
 -	    touch_rd(st.se, 0x254) != 0) {
 -		printf("SWEET TOUCH: packing readback mismatch; probes skipped\n");
--		return false;
++	uint32_t toc = RPM_RAM_SIZE - 256u, magic = rpm_r(toc), count = rpm_r(toc + 4);
++	if (magic != 0x67727430u || count > 20) {
++		TLOG("RPM: bad TOC magic=%#x count=%u", magic, count);
+ 		return false;
+ 	}
+-	if ((touch_rd(st.se, SE_TX_COUNT) & 0xfffffffu) ||
+-	    (touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu)) {
+-		printf("SWEET TOUCH: inherited FIFO data; probes skipped\n");
++	for (uint32_t i = 0; i < count; ++i) {
++		uint32_t id = rpm_r(toc + 8 + 12 * i), off = rpm_r(toc + 12 + 12 * i), size = rpm_r(toc + 16 + 12 * i);
++		if (off > RPM_RAM_SIZE || off + size > RPM_RAM_SIZE || size < 64) {
++			continue;
++		}
++		if (id == 0x61703272u) {        /* ap2r */
++			rpm.tx_off = off;
++			rpm.tx_len = size;
++		} else if (id == 0x72326170u) { /* r2ap */
++			rpm.rx_off = off;
++			rpm.rx_len = size;
++		}
++	}
++	if (!rpm.tx_len || !rpm.rx_len) {
++		TLOG("RPM: FIFOs not found in TOC (count=%u)", count);
+ 		return false;
+ 	}
+-	return true;
++	uint32_t t0 = rpm_r(rpm.tx_off), h0 = rpm_r(rpm.tx_off + 4), t1 = rpm_r(rpm.rx_off), h1 = rpm_r(rpm.rx_off + 4);
++	/* As Linux glink_rpm_probe: restart both FIFOs from our side. */
++	rpm_w(rpm.tx_off + 4, 0);
++	rpm_w(rpm.rx_off, 0);
++	rpm.features = 2u;              /* GLINK_FEATURE_INTENTLESS */
++	bool sent = rpm_cmd(0, 1, rpm.features);
++	bool va = rpm_wait(&rpm.ver_ack, 1000);
++	if (va) {
++		(void)rpm_wait(&rpm.ropen, 500);
++		/* lcid 1, name "rpm_requests" + NUL = 13 bytes, padded to 16. */
++		uint32_t o[6] = { 2u | (1u << 16), 13u, 0, 0, 0, 0 };
++		memcpy(&o[2], "rpm_requests", 13);
++		(void)rpm_tx(o, 24);
++		(void)rpm_wait(&rpm.open_ack, 1000);
++		if (!rpm.ropen) {
++			(void)rpm_wait(&rpm.ropen, 500);
++		}
++	}
++	TLOG("RPM glink: fifo tx %u/%u@%#x rx %u/%u@%#x sent=%d verack=%d ropen=%d(rcid %u) openack=%d bad=%d rx:%s",
++	    t0, h0, rpm.tx_len, t1, h1, rpm.rx_len, sent, va, rpm.ropen, rpm.rcid, rpm.open_ack, rpm.bad, rpm.trace);
++	rpm.up = va && rpm.open_ack;
++	return rpm.up;
++}
++
++/* Active-set request: enable LDO <type> <id> at uv microvolts. 0 = acked. */
++static int
++rpm_ldo_enable(uint32_t type, uint32_t id, uint32_t uv, char *err, size_t errlen)
++{
++	static uint32_t msg_id = 0x5362;
++	uint32_t m[18];
++	err[0] = 0;
++	if (!rpm_bringup()) {
++		return ENXIO;
++	}
++	memset(m, 0, sizeof(m));
++	m[0] = 9u | (1u << 16);         /* TX_DATA on lcid 1 */
++	m[1] = 0;                       /* iid */
++	m[2] = 52;                      /* chunk */
++	m[3] = 0;                       /* left */
++	m[4] = 0x00716572u;             /* "req\0" */
++	m[5] = 20 + 24;
++	m[6] = ++msg_id;
++	m[7] = 0;                       /* active set */
++	m[8] = type;
++	m[9] = id;
++	m[10] = 24;
++	m[11] = 0x6e657773u;            /* "swen" */
++	m[12] = 4;
++	m[13] = 1;
++	m[14] = 0x00007675u;            /* "uv" */
++	m[15] = 4;
++	m[16] = uv;
++	rpm.data = false;
++	rpm.resp_len = 0;
++	if (!rpm_tx(m, 72)) {
++		return ENOSPC;
++	}
++	if (!rpm_wait(&rpm.data, 1500)) {
++		return ETIMEDOUT;
++	}
++	/* Response: {"req", length} then {type, length, msg_id | text}... */
++	uint32_t w[4] = {0, 0, 0, 0};
++	memcpy(w, rpm.resp, rpm.resp_len < 16 ? rpm.resp_len : 16);
++	if (w[2] == 0x00727265u) {      /* "err\0" */
++		size_t n = rpm.resp_len > 16 ? rpm.resp_len - 16 : 0;
++		if (n >= errlen) {
++			n = errlen - 1;
++		}
++		memcpy(err, rpm.resp + 16, n);
++		err[n] = 0;
++		return EINVAL;
++	}
++	return 0;
++}
++
++/* ---- bring-up ----------------------------------------------------------- */
++
++static bool
++t_clocks(void)
++{
 +	uint32_t cbcr = t_rd(t.gcc_i2c, 0x008);
 +	uint32_t ahb = t_rd(t.gcc_ahb, 0x004);
 +	TLOG("GCC qup1-i2c cbcr=%#x rcg=%#x/%#x blsp1-ahb=%#x vote=%#x",
@@ -1519,21 +1813,27 @@ index 03defe6..3313646 100644
 +			delay(1);
 +		}
 +		t_wr(t.gcc_i2c, 0x008, t_rd(t.gcc_i2c, 0x008) | 1u);
- 	}
--	if ((touch_rd(st.se, SE_TX_COUNT) & 0xfffffffu) ||
--	    (touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu)) {
--		printf("SWEET TOUCH: inherited FIFO data; probes skipped\n");
--		return false;
++	}
 +	for (unsigned i = 0; i < 1000; ++i) {
 +		if (!(t_rd(t.gcc_i2c, 0x008) & (1u << 31)) && !(t_rd(t.gcc_ahb, 0x004) & (1u << 31))) {
 +			return true;
 +		}
 +		delay(10);
- 	}
--	return true;
++	}
 +	TLOG("clocks did not come up: cbcr=%#x ahb=%#x",
 +	    t_rd(t.gcc_i2c, 0x008), t_rd(t.gcc_ahb, 0x004));
 +	return false;
++}
++
++static void
++t_reset_pulse(void)
++{
++	uint32_t rcfg = t_rd(t.rst, 0);
++	t_wr(t.rst, 4, 0);
++	t_wr(t.rst, 0, (rcfg & ~0x3ffu) | (7u << 6) | (1u << 9));
++	t_wait(20);
++	t_wr(t.rst, 4, 2u);
++	t_wait(200);
  }
  
  static void
@@ -1588,7 +1888,16 @@ index 03defe6..3313646 100644
 +	(void)PE_parse_boot_argn("s62tgpiodump", &gdump, sizeof(gdump));
 +	if (gdump) {
 +		t_dump_gpio_outputs();
-+	}
+ 	}
+-	printf("SWEET TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; voting L11C through RPMh\n",
+-	    touch_rd(st.gpio, TOUCH_GPIO_IO(8)), touch_rd(st.gpio, TOUCH_GPIO_IO(9)),
+-	    touch_rd(st.gpio, TOUCH_GPIO_IO(90)));
+-	/* Keep the IC in reset while its rails settle; IRQ stays an input. */
+-	touch_gpio(9, 0, 3, 3, false, false); /* IRQ input, 8 mA, pull-up */
+-	touch_gpio(8, 0, 3, 3, true, false);
+-	int power_error = sweet_rpmh_vreg_enable("ldoc11", 3200);
+-	if (power_error) {
+-		printf("SWEET TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
 +	/* Experiment without a rebuild: s62tldo=0xSPP tries to enable the LDO at
 +	 * sid S, peripheral PP directly over SPMI (refused if RPM owns it). */
 +	unsigned xldo = 0;
@@ -1607,16 +1916,7 @@ index 03defe6..3313646 100644
 +			(void)s62_spmi_read(sid, (per << 8) | 0x46u, &en);
 +			TLOG("LDO write=%d -> status=%#x en=%#x", wr, st, en);
 +		}
- 	}
--	printf("SWEET TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; voting L11C through RPMh\n",
--	    touch_rd(st.gpio, TOUCH_GPIO_IO(8)), touch_rd(st.gpio, TOUCH_GPIO_IO(9)),
--	    touch_rd(st.gpio, TOUCH_GPIO_IO(90)));
--	/* Keep the IC in reset while its rails settle; IRQ stays an input. */
--	touch_gpio(9, 0, 3, 3, false, false); /* IRQ input, 8 mA, pull-up */
--	touch_gpio(8, 0, 3, 3, true, false);
--	int power_error = sweet_rpmh_vreg_enable("ldoc11", 3200);
--	if (power_error) {
--		printf("SWEET TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
++	}
 +	if (!t_clocks()) {
  		goto out;
  	}
@@ -1662,11 +1962,7 @@ index 03defe6..3313646 100644
 +	 */
 +	uint32_t rcfg = t_rd(t.rst, 0), rio = t_rd(t.rst, 4);
 +	if (force_reset) {
-+		t_wr(t.rst, 4, 0);
-+		t_wr(t.rst, 0, (rcfg & ~0x3ffu) | (7u << 6) | (1u << 9));
-+		t_wait(20);
-+		t_wr(t.rst, 4, 2u);
-+		t_wait(200);
++		t_reset_pulse();
 +	}
 +	TLOG("after setup: sda=%#x/%#x scl=%#x/%#x rst %#x/%#x -> %#x/%#x irq=%#x pull=%u reset=%u",
 +	    t_rd(t.sda, 0), t_rd(t.sda, 4), t_rd(t.sda, 0x1000), t_rd(t.sda, 0x1004),
@@ -1730,6 +2026,63 @@ index 03defe6..3313646 100644
 +		t_wait(500);
 +		e = hx_ahb_read(0x900000d0u, &id);
 +		TLOG("id retry err=%d raw=%#x", e, id);
++	}
++	if (e && !bb48) {
++		/*
++		 * Chip silent: power. Ask the RPM for the rails that are off, one at
++		 * a time (at the voltage already programmed in the PMIC), and probe
++		 * after each. s62trails=0 skips this; bit n selects candidate n.
++		 */
++		static const struct { const char *name; uint32_t type, id, sid, periph; } rails[] = {
++			{ "pm660l_l6", 0x626f646cu, 6, 3, 0x45 },       /* "ldob": dsi vdda-3p3 */
++			{ "pm660_l12", 0x616f646cu, 12, 1, 0x4b },      /* "ldoa": 1.8 V */
++			{ "pm660l_l3", 0x626f646cu, 3, 3, 0x42 },
++			{ "pm660l_l8", 0x626f646cu, 8, 3, 0x47 },
++		};
++		unsigned mask = 0xf;
++		(void)PE_parse_boot_argn("s62trails", &mask, sizeof(mask));
++		for (unsigned r = 0; r < 4 && !bb48; ++r) {
++			if (!(mask & (1u << r))) {
++				continue;
++			}
++			uint8_t vl = 0, vh = 0, st = 0;
++			unsigned base = rails[r].periph << 8;
++			char rerr[40];
++			if (!s62_spmi_read(rails[r].sid, base + 0x40u, &vl) || !s62_spmi_read(rails[r].sid, base + 0x41u, &vh)) {
++				TLOG("RPM %s: cannot read voltage", rails[r].name);
++				continue;
++			}
++			uint32_t uv = ((uint32_t)vh << 8 | vl) * 1000u;
++			if (uv < 1000000u || uv > 3400000u) {
++				TLOG("RPM %s: unexpected %u uV, skipped", rails[r].name, uv);
++				continue;
++			}
++			int rc = rpm_ldo_enable(rails[r].type, rails[r].id, uv, rerr, sizeof(rerr));
++			t_wait(50);
++			(void)s62_spmi_read(rails[r].sid, base + 0x08u, &st);
++			if (rc == 0) {
++				t_reset_pulse();
++				t_wr(t.sda, 0x0000, t_rd(t.sda, 0x0000) & ~((0xfu << 2) | (1u << 9) | 3u));
++				t_wr(t.sda, 0x1000, t_rd(t.sda, 0x1000) & ~((0xfu << 2) | (1u << 9) | 3u));
++				bbn = bb_scan(bbfound, sizeof(bbfound));
++				for (const char *q = bbfound; *q; ++q) {
++					if (q[0] == '0' && q[1] == 'x' && q[2] == '4' && q[3] == '8' && (q[4] == ' ' || q[4] == 0)) {
++						bb48 = true;
++					}
++				}
++				t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | pcfg);
++				t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | pcfg);
++			}
++			TLOG("RPM %s %u uV: rc=%d %s pmic-status=%#x int=%d scan:%s", rails[r].name, uv, rc, rerr, st,
++			    (int)(t_rd(t.irq, 4) & 1u), rc ? " -" : (bbn ? bbfound : " none"));
++			if (rc == ENXIO) {
++				break;          /* no RPM link: the other rails would fail the same way */
++			}
++		}
++		if (bb48) {
++			e = hx_ahb_read(0x900000d0u, &id);
++			TLOG("after power-up: QUP id err=%d raw=%#x ic=%#x", e, id, id >> 8);
++		}
 +	}
 +	if (e && bb48 && !t_bb) {
 +		/* The chip answers bit-banged but not through the QUP: use bit-bang. */
@@ -1812,7 +2165,7 @@ index 03defe6..3313646 100644
  }
  
  void
-@@ -640,21 +902,20 @@ sweet_touch_init(void)
+@@ -640,21 +1269,20 @@ sweet_touch_init(void)
  {
  	int enabled = 1;
  	thread_t thread;
