@@ -133,3 +133,19 @@
   QUP v2 en modo FIFO con tags V2, sondeo; eventos de 56 bytes desde el registro 0x30 (formato de
   Linux himax_hx83112b.c). Arranca `sweettouchdelay` s (60 por defecto) después de montar la raíz.
   `s62ti2c=100` baja el bus a 100 kHz. SweetHID usa ahora el tamaño real del panel (1080x2160).
+
+## Táctil: hardware real (de Android 11 en slot A, 2026-11-11)
+
+- La unidad NO es la variante Himax del dtbo viejo guardado en `s62-shim/stock_dtbo.img`. Android real:
+  panel `hx8399c boe jutai`, dtbo_idx=7, dtb_idx=1, hwid=1; táctil FocalTech `fts_ts` id 0x5422 en
+  i2c-4 (QUP 0x0c178000, gpio14 SDA / gpio15 SCL función 2, tile norte), dirección 0x38,
+  irq gpio67, reset gpio66 (gpiochip TLMM base 1166). vdd = `tp_vdd` fijo desde pm660l_bob (3.3 V),
+  vcc_i2c = pm660l_l3.
+- Los LDO son del RPM (dueño SPMI EE 4): escritura directa imposible. Cliente GLINK-RPM sondeado en
+  `sweet_touch.c` (msg RAM 0x778000, TOC "grt0", FIFOs ap2r/r2ap, timbre APCS 0x17911008 bit 0,
+  canal `rpm_requests`, petición "req" con kvp swen/uv). Verificado en hardware: verack/openack y
+  rc=0 al encender ldob6, ldoa12, ldob3, ldob8.
+- gpio12 del TLMM da external abort al leerlo (protegido por TZ): no barrer todos los pines.
+- Botones verificados: power = PON KPDPWR, vol- = PON RESIN, vol+ = PM660L GPIO7, home = PM660 GPIO11.
+- SMP: 8 núcleos arrancan (MPIDR Aff1 = clúster, Aff0 = núcleo); config SGI/PPI del GICR reescrita tras
+  habilitar el GIC en cada CPU.

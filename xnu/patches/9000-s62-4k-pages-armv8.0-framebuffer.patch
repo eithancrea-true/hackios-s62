@@ -444,35 +444,37 @@ index a148608..4c11e3b 100644
  }
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 03defe6..eed674d 100644
+index 03defe6..378bc93 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
-@@ -1,9 +1,19 @@
+@@ -1,9 +1,21 @@
  /*
 - * SWEET SE7 FIFO I2C / GT9896 Yellowstone / Focaltech 54:52 bring-up.
 - * Call once after the scheduler is running; all work runs on one thread.
 - * Requires ABL-loaded GENI I2C firmware; votes L11C through sweet_rpmh.c.
 - * No firmware/config upload or direct PMIC writes. Only IC data write:
 - * zero to GT9896's event status after reading a report. See touch2/report.md.
-+ * CAT S62: Himax HX83112A (TDDI) touch on BLSP1 QUP1 I2C, polled.
++ * CAT S62: FocalTech FT5x46-family touch (chip id 0x5422) on BLSP1 QUP4 I2C,
++ * polled.
 + *
-+ * Stock dtbo (SDM 660 ... CEI): i2c_1 / himax,hxcommon @ 0x48, panel and
-+ * display coords 1080x2160, IRQ TLMM gpio45 (active low), reset gpio25.
-+ * The display (and with it the touch half of the TDDI) is brought up by
-+ * ABL; this driver never powers rails and only releases the reset line if
-+ * it is found driven low (boot-arg s62treset=1 forces a 20 ms pulse, which
-+ * may disturb the panel).
++ * Hardware facts come from the running stock Android 11 (bugreport + live
++ * /sys): fts_ts at 4-0038 (i2c@c178000, TLMM gpio14 SDA / gpio15 SCL),
++ * irq gpio67 (active low), reset gpio66, panel hx8399c boe, 1080x2160.
++ * Supplies: vdd = tp_vdd fixed regulator fed by pm660l_bob (3.3 V),
++ * vcc_i2c = pm660l_l3. Both PMIC rails belong to the RPM, so they are
++ * requested over GLINK like Linux does. (The dtbo dumped earlier described
++ * a different panel variant - Himax on i2c_1 - which is not this unit.)
 + *
 + * Bus: QUP v2.2.1 I2C mini-core in FIFO mode with V2 tags, polled; the
-+ * sequence mirrors Linux i2c-qup.c qup_i2c_xfer_v2 (write msg, PAUSE,
-+ * read msg). Clocks: GCC BLSP1 AHB vote and BLSP1_QUP1_I2C_APPS from XO.
-+ * Events: hx83112b format (Linux himax_hx83112b.c) - 56 bytes from 0x30:
-+ * 10 x {be16 x, be16 y}, 10 majors, 2 pad, point count, 2 pad, checksum
-+ * (byte sum == 0 mod 256). x/y == 0xffff marks an empty slot.
++ * sequence mirrors Linux i2c-qup.c qup_i2c_xfer_v2. A GPIO bit-bang
++ * transport on the same pads is the fallback.
++ * Events: standard FocalTech layout from register 0x00: mode, gesture,
++ * TD_STATUS (count), then 6 bytes per point: XH (event << 6 | x[11:8]), XL,
++ * YH (id << 4 | y[11:8]), YL, weight, area.
   */
  #if defined(ARM64_BOARD_CONFIG_SWEET)
  #include <sys/param.h>
-@@ -17,72 +27,110 @@
+@@ -17,72 +29,107 @@
  
  extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
  /* Mach MIG declaration is not included by BSD's exported thread.h. */
@@ -533,20 +535,17 @@ index 03defe6..eed674d 100644
 - * MSB-to-LSB, length 8, STOP only on vector 3. FIFO bytes remain LSB first. */
 -#define SE_PACK0        0x0007f8feu
 -#define SE_PACK1        0x000ffefeu
-+#define T_QUP_PA        0x0c175000u     /* blsp_i2c1 (downstream i2c_1) */
++#define T_QUP_PA        0x0c178000u     /* blsp_i2c4 */
 +#define T_GCC_PA        0x00100000u
-+#define T_GCC_AHB_HALT  0x17004u        /* gcc_blsp1_ahb_clk, voted */
-+#define T_GCC_VOTE      0x52004u        /* ... enable bit 17 */
-+#define T_GCC_I2C_CBCR  0x19008u        /* gcc_blsp1_qup1_i2c_apps_clk */
-+#define T_GCC_I2C_RCGR  0x19020u        /* blsp1_qup1_i2c_apps_clk_src */
-+#define T_TLMM_SOUTH    0x03100000u
++#define T_GCC_I2C_PAGE  0x1f000u        /* gcc_blsp1_qup4_i2c_apps_clk 0x1f008, rcg 0x1f020 */
 +#define T_TLMM_NORTH    0x03900000u
-+#define T_PIN_SDA       2u              /* south, function 3 blsp_i2c1 */
-+#define T_PIN_SCL       3u
-+#define T_PIN_IRQ       45u             /* south */
-+#define T_PIN_RST       25u             /* north */
++#define T_PIN_SDA       14u             /* north, function 2 blsp_i2c4 */
++#define T_PIN_SCL       15u
++#define T_PIN_RST       66u             /* north */
++#define T_PIN_IRQ       67u             /* north */
++#define T_PIN_FUNC      2u
 +#define T_MAX           10u
-+#define T_EVENT_LEN     56u
++#define T_SLOTS         9u              /* 3 + 6 * 9 = 57 bytes fits the 64-byte FIFO */
 +#define T_W             1080
 +#define T_H             2160
 +
@@ -607,7 +606,7 @@ index 03defe6..eed674d 100644
 +	int x[T_MAX], y[T_MAX];
 +} t;
 +static int t_sleep_chan;
-+static unsigned T_ADDR = 0x48u;
++static unsigned T_ADDR = 0x38u;
 +
 +/* Diagnostics are kept and re-printed every few seconds, so one photo of the
 + * console at any time shows them (boot-arg s62tquiet=1 stops the repeats). */
@@ -642,7 +641,7 @@ index 03defe6..eed674d 100644
  {
  	uint32_t v = *(volatile uint32_t *)(base + off);
  	__asm__ volatile("dmb oshld" ::: "memory");
-@@ -90,7 +138,7 @@ touch_rd(vm_offset_t base, uint32_t off)
+@@ -90,7 +137,7 @@ touch_rd(vm_offset_t base, uint32_t off)
  }
  
  static void
@@ -651,7 +650,7 @@ index 03defe6..eed674d 100644
  {
  	__asm__ volatile("dmb oshst" ::: "memory");
  	*(volatile uint32_t *)(base + off) = val;
-@@ -98,19 +146,22 @@ touch_wr(vm_offset_t base, uint32_t off, uint32_t val)
+@@ -98,19 +145,22 @@ touch_wr(vm_offset_t base, uint32_t off, uint32_t val)
  }
  
  static void
@@ -679,7 +678,7 @@ index 03defe6..eed674d 100644
  			return true;
  		}
  		delay(1);
-@@ -118,521 +169,1099 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
+@@ -118,521 +168,954 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
  	return false;
  }
  
@@ -773,12 +772,12 @@ index 03defe6..eed674d 100644
 +			j = 0;
  		}
 -		delay(1);
- 	}
+-	}
 -	if (!done || !touch_wait_clear(st.se, SE_STATUS, 1u)) {
 -		st.dead = true;
 -		printf("SWEET TOUCH: abort failed status=%#x irq=%#x; stopping\n",
 -		    touch_rd(st.se, SE_STATUS), touch_rd(st.se, SE_IRQ));
--	}
+ 	}
 -	/* Bound drain even if the hardware reports an impossible FIFO count. */
 -	for (unsigned i = 0; i < 64 && (touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu); ++i) {
 -		(void)touch_rd(st.se, SE_RX);
@@ -964,9 +963,7 @@ index 03defe6..eed674d 100644
 -		touch_wr(st.se, SE_IRQ_CLR, irq & (SE_RX_WM_IRQ | SE_RX_LAST | SE_TX_WM_IRQ));
 -		delay(1);
 +		t_wr(t.qup, QUP_OPERATIONAL, QUP_IN_SVC | QUP_IN_DONE | QUP_OUT_SVC | QUP_OUT_DONE);
- 	}
--	touch_abort();
--	return err;
++	}
 +	for (unsigned i = 0; t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ACTIVE; ++i) {
 +		if (i > 1000) {
 +			return qup_abort(ETIMEDOUT);
@@ -992,7 +989,9 @@ index 03defe6..eed674d 100644
 +	cfg |= 3u;
 +	if (!high) {
 +		cfg |= 1u << 9;
-+	}
+ 	}
+-	touch_abort();
+-	return err;
 +	t_wr(t.sda, pin + 4u, 0);
 +	t_wr(t.sda, pin, cfg);
  }
@@ -1007,20 +1006,6 @@ index 03defe6..eed674d 100644
 +
 +static bool
 +bb_scl_high(void)
-+{
-+	bb_line(BB_SCL, 1);
-+	for (unsigned i = 0; i < 2000; ++i) {       /* clock stretching, 2 ms max */
-+		if (bb_get(BB_SCL)) {
-+			return true;
-+		}
-+		delay(1);
-+	}
-+	return false;
-+}
-+
-+/* (Repeated) START: SDA high, SCL high, SDA low, SCL low. */
-+static bool
-+bb_start(void)
  {
 -	st.irq_status = st.irq_last = 0;
 -	st.sent = st.got = 0;
@@ -1030,12 +1015,26 @@ index 03defe6..eed674d 100644
 -		    addr, nr ? "read" : "write", nr ? nr : nt, stretch ? 1u : 0u,
 -		    err, st.irq_last, st.irq_status, st.sent, st.got,
 -		    touch_rd(st.se, SE_STATUS));
++	bb_line(BB_SCL, 1);
++	for (unsigned i = 0; i < 2000; ++i) {       /* clock stretching, 2 ms max */
++		if (bb_get(BB_SCL)) {
++			return true;
++		}
++		delay(1);
+ 	}
+-	return err;
++	return false;
++}
++
++/* (Repeated) START: SDA high, SCL high, SDA low, SCL low. */
++static bool
++bb_start(void)
++{
 +	bb_line(BB_SDA, 1);
 +	delay(t_bb_us);
 +	if (!bb_scl_high()) {
 +		return false;
- 	}
--	return err;
++	}
 +	delay(t_bb_us);
 +	if (!bb_get(BB_SDA)) {
 +		return false;
@@ -1075,14 +1074,14 @@ index 03defe6..eed674d 100644
 +		}
 +		delay(t_bb_us);
 +		bb_line(BB_SCL, 0);
-+	}
+ 	}
+-	/* STOP_STRETCH on the pointer write retains the bus for a repeated START. */
+-	return touch_msg(addr, NULL, 0, buf, len, false);
 +	bb_line(BB_SDA, 1);
 +	delay(t_bb_us);
 +	if (!bb_scl_high()) {
 +		return ETIMEDOUT;
- 	}
--	/* STOP_STRETCH on the pointer write retains the bus for a repeated START. */
--	return touch_msg(addr, NULL, 0, buf, len, false);
++	}
 +	delay(t_bb_us);
 +	int nack = bb_get(BB_SDA);
 +	bb_line(BB_SCL, 0);
@@ -1171,18 +1170,27 @@ index 03defe6..eed674d 100644
 +	return e;
  }
  
+-static unsigned
+-touch_be16(const uint8_t *p)
 +static int
 +t_xfer(const uint8_t *w, unsigned wlen, uint8_t *r, unsigned rlen)
-+{
-+	return t_bb ? bb_xfer(w, wlen, r, rlen) : qup_xfer(w, wlen, r, rlen);
-+}
-+
-+/* Address-only probe (START, addr|W, STOP) of 0x08..0x77; "found" gets the ACKs. */
- static unsigned
--touch_be16(const uint8_t *p)
-+bb_scan(char *found, size_t len)
  {
 -	return ((unsigned)p[0] << 8) | p[1];
++	return t_bb ? bb_xfer(w, wlen, r, rlen) : qup_xfer(w, wlen, r, rlen);
+ }
+ 
+-static bool
+-touch_checksum(const uint8_t *buf, unsigned len)
++/* Address-only probe (START, addr|W, STOP) of 0x08..0x77; "found" gets the ACKs. */
++static unsigned
++bb_scan(char *found, size_t len)
+ {
+-	if (len < 2) {
+-		return false;
+-	}
+-	unsigned sum = 0;
+-	for (unsigned i = 0; i + 2 < len; ++i) {
+-		sum += buf[i];
 +	unsigned nf = 0;
 +	found[0] = 0;
 +	for (unsigned a = 0x08; a < 0x78; ++a) {
@@ -1198,41 +1206,17 @@ index 03defe6..eed674d 100644
 +			snprintf(found, len, " bus-stuck(e=%d sda=%d scl=%d)", e, bb_get(BB_SDA), bb_get(BB_SCL));
 +			return 0;
 +		}
-+	}
-+	return nf;
- }
- 
--static bool
--touch_checksum(const uint8_t *buf, unsigned len)
-+/* ---- Himax -------------------------------------------------------------- */
-+
-+static int
-+hx_wr32(uint8_t reg, uint32_t v)
- {
--	if (len < 2) {
--		return false;
-+	uint8_t b[5] = { reg, (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24) };
-+	return t_xfer(b, 5, NULL, 0);
-+}
-+
-+/* AHB read of one 32-bit word (Linux himax_bus_read, length 4). */
-+static int
-+hx_ahb_read(uint32_t addr, uint32_t *out)
-+{
-+	uint8_t reg = 0x08, b[4];
-+	int e;
-+	if ((e = hx_wr32(0x00, addr)) || (e = hx_wr32(0x0c, 0x00))) {
-+		return e;
- 	}
--	unsigned sum = 0;
--	for (unsigned i = 0; i + 2 < len; ++i) {
--		sum += buf[i];
-+	if ((e = t_xfer(&reg, 1, b, 4))) {
-+		return e;
  	}
 -	return (sum & 0xffffu) == touch_be16(buf + len - 2);
-+	*out = (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
-+	return 0;
++	return nf;
++}
++
++/* ---- FocalTech ------------------------------------------------------------ */
++
++static int
++ft_rd(uint8_t reg, uint8_t *out, unsigned len)
++{
++	return t_xfer(&reg, 1, out, len);
  }
  
  static void
@@ -1265,45 +1249,37 @@ index 03defe6..eed674d 100644
 +
  static int
 -touch_goodix(void)
-+hx_event(void)
++ft_event(void)
  {
 -	uint8_t buf[90];
 -	int x[TOUCH_MAX] = {0}, y[TOUCH_MAX] = {0};
-+	uint8_t ev[T_EVENT_LEN], reg = 0x30;
++	uint8_t ev[3 + 6 * T_SLOTS];
 +	int x[T_MAX] = {0}, y[T_MAX] = {0};
  	uint32_t mask = 0;
 -	int err = touch_read(0x5d, GOODIX_EVENT_REG, true, buf, GOODIX_HEAD_LEN);
 -	if (err) {
 -		return err;
-+	int e = t_xfer(&reg, 1, ev, T_EVENT_LEN);
-+	if (e) {
-+		return e;
- 	}
+-	}
 -	if (!(buf[0] & 0x80u)) {
 -		/* Do not acknowledge firmware/config requests that we cannot service. */
 -		if (buf[0] & 0x40u) {
 -			return ENOTSUP;
 -		}
 -		return 0; /* no new touch frame: retain current contacts */
-+	unsigned sum = 0, ed = 0;
-+	for (unsigned i = 0; i < T_EVENT_LEN; ++i) {
-+		sum += ev[i];
-+		ed += (ev[i] == 0xed || ev[i] == 0xee || ev[i] == 0xec);
- 	}
+-	}
 -	if (!touch_checksum(buf, GOODIX_HEAD_LEN)) {
 -		return EIO; /* header untrusted: no write to the IC */
-+	if (ed == T_EVENT_LEN) {
-+		return EAGAIN;          /* ESD / exception pattern */
++	int e = ft_rd(0x00, ev, sizeof(ev));
++	if (e) {
++		return e;
  	}
 -	unsigned n = buf[2] & 15u;
 -	if (n > TOUCH_MAX) {
 -		(void)touch_goodix_ack();
 -		return EIO;
-+	if (sum & 0xffu) {
-+		if ((t_bad_sum++ % 50u) == 0) {
-+			printf("S62 TOUCH: bad checksum %#x n=%#x first %02x%02x%02x%02x\n",
-+			    sum & 0xffu, ev[52], ev[0], ev[1], ev[2], ev[3]);
-+		}
++	unsigned n = ev[2] & 0x0fu;
++	if (n > T_MAX) {
++		t_bad_sum++;            /* 0xff.. while the controller is still booting */
 +		return EAGAIN;
  	}
 -	if (n) {
@@ -1311,23 +1287,35 @@ index 03defe6..eed674d 100644
 -		    buf + GOODIX_HEAD_LEN, n * GOODIX_POINT_LEN + 2u);
 -		if (err) {
 -			return err;
-+	if (ev[52] != 0xff && (ev[52] & 0x0fu)) {
-+		for (unsigned i = 0; i < T_MAX; ++i) {
-+			unsigned px = (unsigned)ev[4 * i] << 8 | ev[4 * i + 1];
-+			unsigned py = (unsigned)ev[4 * i + 2] << 8 | ev[4 * i + 3];
-+			if (px == 0xffffu || py == 0xffffu || px > 4095u || py > 4095u) {
-+				continue;
-+			}
-+			x[i] = (int)px;
-+			y[i] = (int)py;
-+			mask |= 1u << i;
++	for (unsigned i = 0; i < T_SLOTS; ++i) {
++		const uint8_t *q = &ev[3 + 6 * i];
++		unsigned event = q[0] >> 6, id = q[2] >> 4;
++		if (id >= T_MAX || event == 1 || event == 3) {
++			continue;       /* empty slot, lift-off, no event */
  		}
 -		if (!touch_checksum(buf + GOODIX_HEAD_LEN, n * GOODIX_POINT_LEN + 2u)) {
 -			(void)touch_goodix_ack();
 -			return EIO;
-+	}
++		int px = (int)((unsigned)(q[0] & 0x0fu) << 8 | q[1]);
++		int py = (int)((unsigned)(q[2] & 0x0fu) << 8 | q[3]);
++		if (px >= T_W || py >= T_H) {
++			continue;
+ 		}
++		x[id] = px;
++		y[id] = py;
++		mask |= 1u << id;
+ 	}
+-	for (unsigned i = 0; i < n; ++i) {
+-		const uint8_t *p = buf + GOODIX_HEAD_LEN + i * GOODIX_POINT_LEN;
+-		unsigned id = p[0] >> 4;
+-		unsigned px = touch_be16(p + 2), py = touch_be16(p + 4);
+-		/* Low nibble 1/3 denotes pen data in the vendor parser. */
+-		if ((p[0] & 15u) == 1u || (p[0] & 15u) == 3u || id >= TOUCH_MAX ||
+-		    (mask & (1u << id)) || px > 1079 || py > 2399) {
+-			(void)touch_goodix_ack();
+-			return EIO;
 +	if (mask != t.active && (t_events++ < 40u || !t.active)) {
-+		printf("S62 TOUCH: n=%u mask=%#x p0=%d,%d\n", ev[52] & 0x0fu, mask,
++		printf("S62 TOUCH: n=%u mask=%#x p0=%d,%d\n", n, mask,
 +		    (mask & 1u) ? x[0] : -1, (mask & 1u) ? y[0] : -1);
 +	}
 +	t_report(mask, x, y);
@@ -1351,61 +1339,18 @@ index 03defe6..eed674d 100644
 +			o += (size_t)snprintf(line + o, sizeof(line) - o, " %u:?", n);
 +			continue;
  		}
+-		mask |= 1u << id;
+-		x[id] = (int)px;
+-		y[id] = (int)py;
 +		(void)s62_spmi_read(sid, base + 0x40u, &vl);
 +		(void)s62_spmi_read(sid, base + 0x41u, &vh);
 +		o += (size_t)snprintf(line + o, sizeof(line) - o, " %u:%c%x", n,
 +		    (st & 0x80u) ? 'E' : ((en & 0x80u) ? 'e' : '-'), (unsigned)vh << 8 | vl);
  	}
--	for (unsigned i = 0; i < n; ++i) {
--		const uint8_t *p = buf + GOODIX_HEAD_LEN + i * GOODIX_POINT_LEN;
--		unsigned id = p[0] >> 4;
--		unsigned px = touch_be16(p + 2), py = touch_be16(p + 4);
--		/* Low nibble 1/3 denotes pen data in the vendor parser. */
--		if ((p[0] & 15u) == 1u || (p[0] & 15u) == 3u || id >= TOUCH_MAX ||
--		    (mask & (1u << id)) || px > 1079 || py > 2399) {
--			(void)touch_goodix_ack();
--			return EIO;
-+	TLOG("%s LDO%s", name, line);
-+}
-+
-+/* TLMM pins that are GPIO outputs: "n+" driven high, "n-" driven low. */
-+static void
-+t_dump_gpio_outputs(void)
-+{
-+	static const uint8_t tile[114] = {
-+		/* 0 north, 1 center, 2 south; from Linux pinctrl-sdm660.c */
-+		2,2,2,2,0,2,2,2,0,0,0,0,0,0,0,0,1,1,1,1,2,2,1,1,0,0,0,0,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,2,2,2,2,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
-+	};
-+	static const uint32_t base[3] = { 0x03900000u, 0x03500000u, 0x03100000u };
-+	char line[150];
-+	size_t o = 0;
-+	unsigned part = 0;
-+	line[0] = 0;
-+	for (unsigned n = 0; n < 114; ++n) {
-+		if (n >= 12 && n <= 15) {
-+			continue;       /* secure (external abort on hardware) */
-+		}
-+		vm_offset_t va = ml_io_map(base[tile[n]] + 0x1000u * n, 0x1000);
-+		if (!va) {
-+			continue;
-+		}
-+		uint32_t cfg = t_rd(va, 0), io = t_rd(va, 4);
-+		if (((cfg >> 2) & 0xfu) == 0 && (cfg & (1u << 9))) {
-+			o += (size_t)snprintf(line + o, sizeof(line) - o, " %u%c", n, (io & 2u) ? '+' : '-');
-+		}
-+		if (o + 8 > sizeof(line) - 20) {
-+			TLOG("TLMM out%u:%s", part++, line);
-+			o = 0;
-+			line[0] = 0;
- 		}
--		mask |= 1u << id;
--		x[id] = (int)px;
--		y[id] = (int)py;
- 	}
 -	err = touch_goodix_ack();
 -	if (!err) {
 -		touch_report(mask, x, y);
-+	TLOG("TLMM out%u:%s", part, line);
++	TLOG("%s LDO%s", name, line);
 +}
 +
 +/* ---- RPM regulators over GLINK (polled) ---------------------------------- */
@@ -1746,7 +1691,7 @@ index 03defe6..eed674d 100644
 +
 +/* Active-set request: enable LDO <type> <id> at uv microvolts. 0 = acked. */
 +static int
-+rpm_ldo_enable(uint32_t type, uint32_t id, uint32_t uv, char *err, size_t errlen)
++rpm_reg_enable(uint32_t type, uint32_t id, uint32_t uv, char *err, size_t errlen)
 +{
 +	static uint32_t msg_id = 0x5362;
 +	uint32_t m[18];
@@ -1802,7 +1747,7 @@ index 03defe6..eed674d 100644
 +{
 +	uint32_t cbcr = t_rd(t.gcc_i2c, 0x008);
 +	uint32_t ahb = t_rd(t.gcc_ahb, 0x004);
-+	TLOG("GCC qup1-i2c cbcr=%#x rcg=%#x/%#x blsp1-ahb=%#x vote=%#x",
++	TLOG("GCC qup4-i2c cbcr=%#x rcg=%#x/%#x blsp1-ahb=%#x vote=%#x",
 +	    cbcr, t_rd(t.gcc_i2c, 0x020), t_rd(t.gcc_i2c, 0x024), ahb, t_rd(t.gcc_vote, 0x004));
 +	t_wr(t.gcc_vote, 0x004, t_rd(t.gcc_vote, 0x004) | (1u << 17));
 +	if (cbcr & (1u << 31)) {
@@ -1823,25 +1768,39 @@ index 03defe6..eed674d 100644
 +	TLOG("clocks did not come up: cbcr=%#x ahb=%#x",
 +	    t_rd(t.gcc_i2c, 0x008), t_rd(t.gcc_ahb, 0x004));
 +	return false;
-+}
-+
-+static void
+ }
+ 
+ static void
+-touch_thread(void *arg, wait_result_t result)
 +t_reset_pulse(void)
-+{
+ {
+-	unsigned delay_s = 45;
 +	uint32_t rcfg = t_rd(t.rst, 0);
 +	t_wr(t.rst, 4, 0);
 +	t_wr(t.rst, 0, (rcfg & ~0x3ffu) | (7u << 6) | (1u << 9));
 +	t_wait(20);
 +	t_wr(t.rst, 4, 2u);
 +	t_wait(200);
- }
- 
- static void
--touch_thread(void *arg, wait_result_t result)
++}
++
++static bool
++t_scan_has(const char *found, unsigned addr)
++{
++	char want[8];
++	snprintf(want, sizeof(want), "%#x", addr);
++	size_t wl = strlen(want);
++	for (const char *q = found; *q; ++q) {
++		if (strncmp(q, want, wl) == 0 && (q[wl] == ' ' || q[wl] == 0)) {
++			return true;
++		}
++	}
++	return false;
++}
++
++static void
 +t_thread(void *arg, wait_result_t result)
- {
--	unsigned delay_s = 45;
-+	unsigned delay_s = 60, khz = 100, force_reset = 1, quiet = 0;
++{
++	unsigned delay_s = 60, khz = 400, quiet = 0, pull = 1, force_bb = 0, rails = 3;
  	(void)arg;
  	(void)result;
 -	/*
@@ -1859,35 +1818,53 @@ index 03defe6..eed674d 100644
 -		printf("SWEET TOUCH: MMIO mapping failed\n");
 +	(void)PE_parse_boot_argn("s62ti2c", &khz, sizeof(khz));
 +	(void)PE_parse_boot_argn("s62tquiet", &quiet, sizeof(quiet));
++	(void)PE_parse_boot_argn("s62tpull", &pull, sizeof(pull));
++	(void)PE_parse_boot_argn("s62tbb", &force_bb, sizeof(force_bb));
++	(void)PE_parse_boot_argn("s62trails", &rails, sizeof(rails));
 +	t_quiet = quiet;
-+	(void)PE_parse_boot_argn("s62treset", &force_reset, sizeof(force_reset));
 +	printf("S62 TOUCH: starting in %u s\n", delay_s);
 +	t_wait(delay_s * 1000u);
 +
 +	t.qup = ml_io_map(T_QUP_PA, 0x1000);
 +	t.gcc_ahb = ml_io_map(T_GCC_PA + 0x17000u, 0x1000);
-+	t.gcc_i2c = ml_io_map(T_GCC_PA + 0x19000u, 0x1000);
++	t.gcc_i2c = ml_io_map(T_GCC_PA + T_GCC_I2C_PAGE, 0x1000);
 +	t.gcc_vote = ml_io_map(T_GCC_PA + 0x52000u, 0x1000);
-+	t.sda = ml_io_map(T_TLMM_SOUTH + 0x1000u * T_PIN_SDA, 0x2000);
-+	t.irq = ml_io_map(T_TLMM_SOUTH + 0x1000u * T_PIN_IRQ, 0x1000);
++	t.sda = ml_io_map(T_TLMM_NORTH + 0x1000u * T_PIN_SDA, 0x2000);
++	t.irq = ml_io_map(T_TLMM_NORTH + 0x1000u * T_PIN_IRQ, 0x1000);
 +	t.rst = ml_io_map(T_TLMM_NORTH + 0x1000u * T_PIN_RST, 0x1000);
 +	if (!t.qup || !t.gcc_ahb || !t.gcc_i2c || !t.gcc_vote || !t.sda || !t.irq || !t.rst) {
 +		TLOG("MMIO mapping failed");
  		goto out;
  	}
 -	if (!touch_clocks() || !touch_se_init()) {
--		goto out;
-+	TLOG("TLMM sda=%#x/%#x scl=%#x/%#x irq=%#x/%#x rst=%#x/%#x",
++	TLOG("FT5422 i2c4: TLMM sda=%#x/%#x scl=%#x/%#x irq=%#x/%#x rst=%#x/%#x",
 +	    t_rd(t.sda, 0), t_rd(t.sda, 4), t_rd(t.sda, 0x1000), t_rd(t.sda, 0x1004),
 +	    t_rd(t.irq, 0), t_rd(t.irq, 4), t_rd(t.rst, 0), t_rd(t.rst, 4));
-+	t_dump_ldos("pm660", 1, 1, 10);
-+	t_dump_ldos("pm660", 1, 11, 19);
 +	t_dump_ldos("pm660l", 3, 1, 10);
-+	/* TZ protects some pins (gpio12 faults on read), so this is opt-in. */
-+	unsigned gdump = 0;
-+	(void)PE_parse_boot_argn("s62tgpiodump", &gdump, sizeof(gdump));
-+	if (gdump) {
-+		t_dump_gpio_outputs();
++
++	/* Hold reset low while the supplies come up (Linux fts power-on order). */
++	uint32_t rcfg = t_rd(t.rst, 0);
++	t_wr(t.rst, 4, 0);
++	t_wr(t.rst, 0, (rcfg & ~0x3ffu) | (1u << 9));
++	char err1[40] = "", err2[40] = "";
++	int rc1 = -1, rc2 = -1;
++	if (rails & 1u) {
++		rc1 = rpm_reg_enable(0x62626f62u /* "bobb" */, 1, 3300000u, err1, sizeof(err1));
++	}
++	if (rails & 2u) {
++		rc2 = rpm_reg_enable(0x626f646cu /* "ldob" */, 3, 1800000u, err2, sizeof(err2));
++	}
++	t_wait(20);
++	uint8_t l3s = 0, l3l = 0, l3h = 0, bobs = 0;
++	(void)s62_spmi_read(3, 0x4208u, &l3s);
++	(void)s62_spmi_read(3, 0x4240u, &l3l);
++	(void)s62_spmi_read(3, 0x4241u, &l3h);
++	(void)s62_spmi_read(3, 0xa008u, &bobs);
++	TLOG("rails: bob 3.3V rc=%d %s (pmic %#x)  l3 1.8V rc=%d %s (pmic %#x, %u mV)",
++	    rc1, err1, bobs, rc2, err2, l3s, (unsigned)l3h << 8 | l3l);
++
++	if (!t_clocks()) {
+ 		goto out;
  	}
 -	printf("SWEET TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; voting L11C through RPMh\n",
 -	    touch_rd(st.gpio, TOUCH_GPIO_IO(8)), touch_rd(st.gpio, TOUCH_GPIO_IO(9)),
@@ -1898,26 +1875,36 @@ index 03defe6..eed674d 100644
 -	int power_error = sweet_rpmh_vreg_enable("ldoc11", 3200);
 -	if (power_error) {
 -		printf("SWEET TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
-+	/* Experiment without a rebuild: s62tldo=0xSPP tries to enable the LDO at
-+	 * sid S, peripheral PP directly over SPMI (refused if RPM owns it). */
-+	unsigned xldo = 0;
-+	(void)PE_parse_boot_argn("s62tldo", &xldo, sizeof(xldo));
-+	if (xldo) {
-+		unsigned sid = (xldo >> 8) & 0xfu, per = xldo & 0xffu, force = 0;
-+		(void)PE_parse_boot_argn("s62tldoforce", &force, sizeof(force));
-+		int owner = s62_spmi_owner(sid, per << 8);
-+		uint8_t st = 0, en = 0;
-+		TLOG("LDO sid=%u periph=%#x owner EE=%d (we are 0)%s", sid, per, owner,
-+		    (owner == 0 || force) ? ": writing enable" : ": not ours, write skipped");
-+		if (owner == 0 || force) {
-+			int wr = s62_spmi_write(sid, (per << 8) | 0x46u, 0x80);
-+			t_wait(20);
-+			(void)s62_spmi_read(sid, (per << 8) | 0x08u, &st);
-+			(void)s62_spmi_read(sid, (per << 8) | 0x46u, &en);
-+			TLOG("LDO write=%d -> status=%#x en=%#x", wr, st, en);
-+		}
++	uint32_t pcfg = (T_PIN_FUNC << 2) | (pull ? 3u : 0u);
++	t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | pcfg);
++	t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | pcfg);
++	t_wr(t.irq, 0, (t_rd(t.irq, 0) & ~0x3ffu) | 3u);        /* INT: gpio input, pull-up */
++	t_reset_pulse();
++	TLOG("after setup: sda=%#x/%#x scl=%#x/%#x rst=%#x/%#x irq=%#x/%#x",
++	    t_rd(t.sda, 0), t_rd(t.sda, 4), t_rd(t.sda, 0x1000), t_rd(t.sda, 0x1004),
++	    t_rd(t.rst, 0), t_rd(t.rst, 4), t_rd(t.irq, 0), t_rd(t.irq, 4));
++
++	uint32_t hw = t_rd(t.qup, QUP_HW_VERSION);
++	t_wr(t.qup, QUP_SW_RESET, 1);
++	(void)qup_state_is(QUP_ST_RESET, 3u);
++	uint32_t io = t_rd(t.qup, QUP_IO_MODE);
++	static const unsigned blk[4] = { 4, 16, 32, 4 };
++	t.out_fifo = blk[io & 3u] * (2u << ((io >> 2) & 7u));
++	t.in_fifo = blk[(io >> 5) & 3u] * (2u << ((io >> 7) & 7u));
++	if (khz == 0 || khz > 400) {
++		khz = 400;
 +	}
-+	if (!t_clocks()) {
++	uint32_t ratio = 19200u / khz;
++	if (khz <= 100) {
++		t.clk_ctl = (3u << 8) | ((ratio / 2u - 3u) & 0xffu);
++	} else {
++		uint32_t fs = (ratio - 6u) * 2u / 3u;
++		t.clk_ctl = ((fs / 2u) << 16) | (3u << 8) | (fs & 0xffu);
++	}
++	TLOG("QUP hw=%#x io=%#x fifo out=%u in=%u, %u kHz clk_ctl=%#x",
++	    hw, io, t.out_fifo, t.in_fifo, khz, t.clk_ctl);
++	if (t.in_fifo < 3u + 6u * T_SLOTS + 2u) {
++		TLOG("input FIFO too small");
  		goto out;
  	}
 -	touch_gpio(90, 0, 0, 0, true, true); /* board digital power enable */
@@ -1945,172 +1932,43 @@ index 03defe6..eed674d 100644
 -	if (st.dead || goodix == fts) {
 -		printf("SWEET TOUCH: no unique supported IC (goodix=%d fts=%d dead=%d); stopping\n",
 -		    goodix, fts, st.dead);
-+	/*
-+	 * SDA/SCL: function 3 (blsp_i2c1), 2 mA. ABL leaves both lines low with
-+	 * no pull (seen on hardware), so use the pad pull-ups (stock DT does the
-+	 * same in its i2c_sleep state); s62tpull=0 selects bias-disable.
-+	 */
-+	uint32_t pull = 1;
-+	(void)PE_parse_boot_argn("s62tpull", &pull, sizeof(pull));
-+	uint32_t pcfg = (3u << 2) | (pull ? 3u : 0u);
-+	t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | pcfg);
-+	t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | pcfg);
-+	/*
-+	 * TP reset (gpio25): ABL leaves it as a pulled-down input, i.e. the touch
-+	 * half of the TDDI is held in reset. Stock ts_reset_high: gpio, 16 mA,
-+	 * output high. Pulse low 20 ms, then high (s62treset=0 skips this).
-+	 */
-+	uint32_t rcfg = t_rd(t.rst, 0), rio = t_rd(t.rst, 4);
-+	if (force_reset) {
-+		t_reset_pulse();
-+	}
-+	TLOG("after setup: sda=%#x/%#x scl=%#x/%#x rst %#x/%#x -> %#x/%#x irq=%#x pull=%u reset=%u",
-+	    t_rd(t.sda, 0), t_rd(t.sda, 4), t_rd(t.sda, 0x1000), t_rd(t.sda, 0x1004),
-+	    rcfg, rio, t_rd(t.rst, 0), t_rd(t.rst, 4), t_rd(t.irq, 4), pull, force_reset);
 +
-+	/*
-+	 * Probe with the QUP out of the way: pads as plain GPIO inputs without
-+	 * pulls tell whether the board's external pull-ups are powered; INT is
-+	 * driven high by a running touch MCU (active low).
-+	 */
-+	t_wr(t.sda, 0x0000, t_rd(t.sda, 0x0000) & ~((0xfu << 2) | (1u << 9) | 3u));
-+	t_wr(t.sda, 0x1000, t_rd(t.sda, 0x1000) & ~((0xfu << 2) | (1u << 9) | 3u));
-+	t_wait(5);
-+	int ext_sda = (int)(t_rd(t.sda, 4) & 1u), ext_scl = (int)(t_rd(t.sda, 0x1004) & 1u);
-+	int irq_lvl = (int)(t_rd(t.irq, 4) & 1u);
-+	t_wr(t.irq, 0, (t_rd(t.irq, 0) & ~3u) | 3u);        /* INT: pull-up */
-+	char bbfound[64];
-+	unsigned bbn = bb_scan(bbfound, sizeof(bbfound));
-+	bool bb48 = false;
-+	for (const char *q = bbfound; *q; ++q) {
-+		if (q[0] == '0' && q[1] == 'x' && q[2] == '4' && q[3] == '8' && (q[4] == ' ' || q[4] == 0)) {
-+			bb48 = true;
++	/* Chip id: 0xa3 = 0x54, 0x9f = 0x22 once the firmware runs (up to ~1 s). */
++	uint8_t idh = 0, idl = 0;
++	int e = EIO;
++	t_bb = force_bb != 0;
++	for (unsigned tries = 0; tries < 10; ++tries) {
++		e = ft_rd(0xa3, &idh, 1);
++		if (!e) {
++			e = ft_rd(0x9f, &idl, 1);
 +		}
-+	}
-+	TLOG("no-pull levels sda=%d scl=%d int=%d; bit-bang scan:%s", ext_sda, ext_scl, irq_lvl,
-+	    bbn ? bbfound : (bbfound[0] ? bbfound : " none"));
-+	unsigned force_bb = 0;
-+	(void)PE_parse_boot_argn("s62tbb", &force_bb, sizeof(force_bb));
-+	t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | pcfg);
-+	t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | pcfg);
-+
-+	uint32_t hw = t_rd(t.qup, QUP_HW_VERSION);
-+	t_wr(t.qup, QUP_SW_RESET, 1);
-+	(void)qup_state_is(QUP_ST_RESET, 3u);
-+	uint32_t io = t_rd(t.qup, QUP_IO_MODE);
-+	static const unsigned blk[4] = { 4, 16, 32, 4 };
-+	t.out_fifo = blk[io & 3u] * (2u << ((io >> 2) & 7u));
-+	t.in_fifo = blk[(io >> 5) & 3u] * (2u << ((io >> 7) & 7u));
-+	if (khz == 0 || khz > 400) {
-+		khz = 400;
-+	}
-+	uint32_t ratio = 19200u / khz;
-+	if (khz <= 100) {
-+		t.clk_ctl = (3u << 8) | ((ratio / 2u - 3u) & 0xffu);
-+	} else {
-+		uint32_t fs = (ratio - 6u) * 2u / 3u;
-+		t.clk_ctl = ((fs / 2u) << 16) | (3u << 8) | (fs & 0xffu);
-+	}
-+	TLOG("QUP hw=%#x io=%#x fifo out=%u in=%u, %u kHz clk_ctl=%#x",
-+	    hw, io, t.out_fifo, t.in_fifo, khz, t.clk_ctl);
-+
-+	uint32_t id = 0;
-+	if (force_bb) {
-+		t_bb = true;
-+	}
-+	int e = hx_ahb_read(0x900000d0u, &id);
-+	TLOG("himax@0x48 id err=%d raw=%#x ic=%#x i2c=%#x qup=%#x",
-+	    e, id, id >> 8, t.last_i2c, t.last_err);
-+	if (e == ENXIO) {
-+		printf("S62 TOUCH: no ACK; retry once after 500 ms\n");
-+		t_wait(500);
-+		e = hx_ahb_read(0x900000d0u, &id);
-+		TLOG("id retry err=%d raw=%#x", e, id);
-+	}
-+	if (e && !bb48) {
-+		/*
-+		 * Chip silent: power. Ask the RPM for the rails that are off, one at
-+		 * a time (at the voltage already programmed in the PMIC), and probe
-+		 * after each. s62trails=0 skips this; bit n selects candidate n.
-+		 */
-+		static const struct { const char *name; uint32_t type, id, sid, periph; } rails[] = {
-+			{ "pm660l_l6", 0x626f646cu, 6, 3, 0x45 },       /* "ldob": dsi vdda-3p3 */
-+			{ "pm660_l12", 0x616f646cu, 12, 1, 0x4b },      /* "ldoa": 1.8 V */
-+			{ "pm660l_l3", 0x626f646cu, 3, 3, 0x42 },
-+			{ "pm660l_l8", 0x626f646cu, 8, 3, 0x47 },
-+		};
-+		unsigned mask = 0xf;
-+		(void)PE_parse_boot_argn("s62trails", &mask, sizeof(mask));
-+		for (unsigned r = 0; r < 4 && !bb48; ++r) {
-+			if (!(mask & (1u << r))) {
-+				continue;
-+			}
-+			uint8_t vl = 0, vh = 0, st = 0;
-+			unsigned base = rails[r].periph << 8;
-+			char rerr[40];
-+			if (!s62_spmi_read(rails[r].sid, base + 0x40u, &vl) || !s62_spmi_read(rails[r].sid, base + 0x41u, &vh)) {
-+				TLOG("RPM %s: cannot read voltage", rails[r].name);
-+				continue;
-+			}
-+			uint32_t uv = ((uint32_t)vh << 8 | vl) * 1000u;
-+			if (uv < 1000000u || uv > 3400000u) {
-+				TLOG("RPM %s: unexpected %u uV, skipped", rails[r].name, uv);
-+				continue;
-+			}
-+			int rc = rpm_ldo_enable(rails[r].type, rails[r].id, uv, rerr, sizeof(rerr));
-+			t_wait(50);
-+			(void)s62_spmi_read(rails[r].sid, base + 0x08u, &st);
-+			if (rc == 0) {
-+				t_reset_pulse();
-+				t_wr(t.sda, 0x0000, t_rd(t.sda, 0x0000) & ~((0xfu << 2) | (1u << 9) | 3u));
-+				t_wr(t.sda, 0x1000, t_rd(t.sda, 0x1000) & ~((0xfu << 2) | (1u << 9) | 3u));
-+				bbn = bb_scan(bbfound, sizeof(bbfound));
-+				for (const char *q = bbfound; *q; ++q) {
-+					if (q[0] == '0' && q[1] == 'x' && q[2] == '4' && q[3] == '8' && (q[4] == ' ' || q[4] == 0)) {
-+						bb48 = true;
-+					}
-+				}
-+				t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | pcfg);
-+				t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | pcfg);
-+			}
-+			TLOG("RPM %s %u uV: rc=%d %s pmic-status=%#x int=%d scan:%s", rails[r].name, uv, rc, rerr, st,
-+			    (int)(t_rd(t.irq, 4) & 1u), rc ? " -" : (bbn ? bbfound : " none"));
-+			if (rc == ENXIO) {
-+				break;          /* no RPM link: the other rails would fail the same way */
-+			}
++		if (!e && idh != 0 && idh != 0xff) {
++			break;
 +		}
-+		if (bb48) {
-+			e = hx_ahb_read(0x900000d0u, &id);
-+			TLOG("after power-up: QUP id err=%d raw=%#x ic=%#x", e, id, id >> 8);
-+		}
++		t_wait(100);
 +	}
-+	if (e && bb48 && !t_bb) {
-+		/* The chip answers bit-banged but not through the QUP: use bit-bang. */
-+		t_bb = true;
-+		e = hx_ahb_read(0x900000d0u, &id);
-+		TLOG("QUP failed, bit-bang ACKs 0x48: switching; id err=%d raw=%#x ic=%#x", e, id, id >> 8);
-+		e = 0;
++	TLOG("ft@0x38 id err=%d chip=%#x%02x i2c=%#x qup=%#x bb=%d", e, idh, idl, t.last_i2c, t.last_err, t_bb);
++	if (e && !t_bb) {
++		/* QUP got nothing: look at the pads directly. */
++		char found[64];
++		t_wr(t.sda, 0x0000, t_rd(t.sda, 0x0000) & ~((0xfu << 2) | (1u << 9) | 3u));
++		t_wr(t.sda, 0x1000, t_rd(t.sda, 0x1000) & ~((0xfu << 2) | (1u << 9) | 3u));
++		t_wait(5);
++		int ls = (int)(t_rd(t.sda, 4) & 1u), lc = (int)(t_rd(t.sda, 0x1004) & 1u);
++		unsigned nf = bb_scan(found, sizeof(found));
++		TLOG("no-pull levels sda=%d scl=%d int=%d; bit-bang scan:%s", ls, lc, (int)(t_rd(t.irq, 4) & 1u),
++		    nf ? found : (found[0] ? found : " none"));
++		if (t_scan_has(found, 0x38)) {
++			t_bb = true;
++			e = ft_rd(0xa3, &idh, 1);
++			TLOG("bit-bang transport: id err=%d chip=%#x", e, idh);
++		} else {
++			t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | pcfg);
++			t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | pcfg);
++		}
 +	}
 +	if (e) {
-+		/* Look for the controller at any other address (1-byte register-pointer write). */
-+		char found[64] = "";
-+		unsigned nf = 0;
-+		for (unsigned a = 0x08; a < 0x78 && nf < 8; ++a) {
-+			uint8_t reg0 = 0;
-+			T_ADDR = a;
-+			int se = t_xfer(&reg0, 1, NULL, 0);
-+			if (se == 0) {
-+				snprintf(found + strlen(found), sizeof(found) - strlen(found), " %#x", a);
-+				nf++;
-+			} else if (se != ENXIO && a == 0x08) {
-+				snprintf(found, sizeof(found), " bus-error %d i2c=%#x qup=%#x", se, t.last_i2c, t.last_err);
-+				break;
-+			}
-+		}
-+		T_ADDR = 0x48u;
-+		TLOG("NOT ANSWERING at 0x48 (err=%d); scan acks:%s; TLMM now sda=%#x/%#x scl=%#x/%#x i2cst=%#x",
-+		    e, found[0] ? found : " none", t_rd(t.sda, 0), t_rd(t.sda, 4),
-+		    t_rd(t.sda, 0x1000), t_rd(t.sda, 0x1004), t_rd(t.qup, QUP_I2C_STATUS));
++		TLOG("controller NOT ANSWERING; stopping");
  		goto out;
  	}
 -	st.kind = goodix ? TOUCH_GOODIX : TOUCH_FTS;
@@ -2128,7 +1986,7 @@ index 03defe6..eed674d 100644
 +	for (;;) {
 +		bool irq_low = !(t_rd(t.irq, 4) & 1u);
 +		if (irq_low || t.active || (++ticks % 5u) == 0) {
-+			e = hx_event();
++			e = ft_event();
 +			if (e && e != EAGAIN) {
 +				nerr++;
  				if ((errors++ % 100u) == 0) {
@@ -2144,16 +2002,15 @@ index 03defe6..eed674d 100644
  				errors = 0;
 +				if (ok++ == 0) {
 +					TLOG("first event read OK");
-+					printf("S62 TOUCH: first event read OK (irq %s)\n", irq_low ? "low" : "high");
 +				}
  			}
  		}
 -		touch_wait(10);
 +		if ((++loops % 100u) == 0) {
-+			snprintf(t_live, sizeof(t_live), "irq=%d reads-ok=%u errs=%u badsum=%u active=%#x last i2c=%#x qup=%#x bb=%d",
++			snprintf(t_live, sizeof(t_live), "irq=%d reads-ok=%u errs=%u notready=%u active=%#x last i2c=%#x qup=%#x bb=%d",
 +			    (int)(t_rd(t.irq, 4) & 1u), ok, nerr, t_bad_sum, t.active, t.last_i2c, t.last_err, t_bb);
 +		}
-+		t_wait(10);
++		t_wait(8);
  	}
 -	touch_report(0, st.x, st.y);
  out:
@@ -2165,7 +2022,7 @@ index 03defe6..eed674d 100644
  }
  
  void
-@@ -640,21 +1269,20 @@ sweet_touch_init(void)
+@@ -640,21 +1123,20 @@ sweet_touch_init(void)
  {
  	int enabled = 1;
  	thread_t thread;
