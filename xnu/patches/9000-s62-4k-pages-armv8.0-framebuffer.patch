@@ -338,7 +338,7 @@ index a148608..4a36358 100644
  }
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 03defe6..ba8933e 100644
+index 03defe6..c37efbb 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -1,9 +1,19 @@
@@ -560,7 +560,7 @@ index 03defe6..ba8933e 100644
  			return true;
  		}
  		delay(1);
-@@ -118,521 +156,643 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
+@@ -118,521 +156,648 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
  	return false;
  }
  
@@ -1118,11 +1118,11 @@ index 03defe6..ba8933e 100644
 -		mask |= 1u << id;
 -		x[id] = (int)px;
 -		y[id] = (int)py;
--	}
+ 	}
 -	err = touch_goodix_ack();
 -	if (!err) {
 -		touch_report(mask, x, y);
- 	}
+-	}
 -	return err;
 +	e = 0;
 +done:
@@ -1461,7 +1461,12 @@ index 03defe6..ba8933e 100644
 +	t_wr(t.irq, 0, (t_rd(t.irq, 0) & ~3u) | 3u);        /* INT: pull-up */
 +	char bbfound[64];
 +	unsigned bbn = bb_scan(bbfound, sizeof(bbfound));
-+	bool bb48 = strstr(bbfound, " 0x48") != NULL;
++	bool bb48 = false;
++	for (const char *q = bbfound; *q; ++q) {
++		if (q[0] == '0' && q[1] == 'x' && q[2] == '4' && q[3] == '8' && (q[4] == ' ' || q[4] == 0)) {
++			bb48 = true;
++		}
++	}
 +	TLOG("no-pull levels sda=%d scl=%d int=%d; bit-bang scan:%s", ext_sda, ext_scl, irq_lvl,
 +	    bbn ? bbfound : (bbfound[0] ? bbfound : " none"));
 +	unsigned force_bb = 0;
@@ -1612,7 +1617,7 @@ index 03defe6..ba8933e 100644
  }
  
  void
-@@ -640,21 +800,20 @@ sweet_touch_init(void)
+@@ -640,21 +805,20 @@ sweet_touch_init(void)
  {
  	int enabled = 1;
  	thread_t thread;
