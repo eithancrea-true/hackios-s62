@@ -415,7 +415,7 @@ index a148608..00fe650 100644
  }
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 03defe6..357e27b 100644
+index 03defe6..ed62bcf 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -1,9 +1,19 @@
@@ -639,7 +639,7 @@ index 03defe6..357e27b 100644
  			return true;
  		}
  		delay(1);
-@@ -118,521 +158,721 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
+@@ -118,521 +158,729 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
  	return false;
  }
  
@@ -1131,14 +1131,14 @@ index 03defe6..357e27b 100644
 +done:
 +	bb_stop();
 +	return e;
- }
- 
++}
++
 +static int
 +t_xfer(const uint8_t *w, unsigned wlen, uint8_t *r, unsigned rlen)
 +{
 +	return t_bb ? bb_xfer(w, wlen, r, rlen) : qup_xfer(w, wlen, r, rlen);
-+}
-+
+ }
+ 
 +/* Address-only probe (START, addr|W, STOP) of 0x08..0x77; "found" gets the ACKs. */
  static unsigned
 -touch_be16(const uint8_t *p)
@@ -1363,9 +1363,6 @@ index 03defe6..357e27b 100644
 -		unsigned id = p[2] >> 4, event = p[0] >> 6;
 -		if (id >= TOUCH_MAX) {
 -			break; /* vendor's unused-record sentinel */
--		}
--		if (seen & (1u << id)) {
--			return EIO;
 +	static const uint8_t tile[114] = {
 +		/* 0 north, 1 center, 2 south; from Linux pinctrl-sdm660.c */
 +		2,2,2,2,0,2,2,2,0,0,0,0,0,0,0,0,1,1,1,1,2,2,1,1,0,0,0,0,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,2,2,2,2,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
@@ -1376,6 +1373,11 @@ index 03defe6..357e27b 100644
 +	unsigned part = 0;
 +	line[0] = 0;
 +	for (unsigned n = 0; n < 114; ++n) {
++		if (n >= 12 && n <= 15) {
++			continue;       /* secure (external abort on hardware) */
+ 		}
+-		if (seen & (1u << id)) {
+-			return EIO;
 +		vm_offset_t va = ml_io_map(base[tile[n]] + 0x1000u * n, 0x1000);
 +		if (!va) {
 +			continue;
@@ -1539,7 +1541,12 @@ index 03defe6..357e27b 100644
 +	t_dump_ldos("pm660", 1, 1, 10);
 +	t_dump_ldos("pm660", 1, 11, 19);
 +	t_dump_ldos("pm660l", 3, 1, 10);
-+	t_dump_gpio_outputs();
++	/* TZ protects some pins (gpio12 faults on read), so this is opt-in. */
++	unsigned gdump = 0;
++	(void)PE_parse_boot_argn("s62tgpiodump", &gdump, sizeof(gdump));
++	if (gdump) {
++		t_dump_gpio_outputs();
++	}
 +	/* Experiment without a rebuild: s62tldo=0xSPP tries to enable the LDO at
 +	 * sid S, peripheral PP directly over SPMI (refused if RPM owns it). */
 +	unsigned xldo = 0;
@@ -1762,7 +1769,7 @@ index 03defe6..357e27b 100644
  }
  
  void
-@@ -640,21 +880,20 @@ sweet_touch_init(void)
+@@ -640,21 +888,20 @@ sweet_touch_init(void)
  {
  	int enabled = 1;
  	thread_t thread;
