@@ -338,7 +338,7 @@ index a148608..4a36358 100644
  }
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 03defe6..56af602 100644
+index 03defe6..48e9cd8 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -1,9 +1,19 @@
@@ -560,7 +560,7 @@ index 03defe6..56af602 100644
  			return true;
  		}
  		delay(1);
-@@ -118,521 +156,418 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
+@@ -118,521 +156,427 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
  	return false;
  }
  
@@ -659,11 +659,11 @@ index 03defe6..56af602 100644
 -		st.dead = true;
 -		printf("SWEET TOUCH: abort failed status=%#x irq=%#x; stopping\n",
 -		    touch_rd(st.se, SE_STATUS), touch_rd(st.se, SE_IRQ));
- 	}
+-	}
 -	/* Bound drain even if the hardware reports an impossible FIFO count. */
 -	for (unsigned i = 0; i < 64 && (touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu); ++i) {
 -		(void)touch_rd(st.se, SE_RX);
--	}
+ 	}
 -	touch_wr(st.se, SE_IRQ_CLR, 0xffffffffu);
 -	if (touch_rd(st.se, SE_TX_COUNT) & 0xfffffffu) {
 -		st.dead = true;
@@ -849,16 +849,8 @@ index 03defe6..56af602 100644
  	}
 -	touch_abort();
 -	return err;
-+	for (unsigned i = 0; t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ACTIVE; ++i) {
-+		if (i > 1000) {
-+			return qup_abort(ETIMEDOUT);
-+		}
-+		delay(2);
-+	}
-+	(void)qup_set_state(QUP_ST_RESET);
-+	return 0;
- }
- 
+-}
+-
 -static int
 -touch_msg(uint8_t addr, const uint8_t *tx, unsigned nt, uint8_t *rx,
 -    unsigned nr, bool stretch)
@@ -873,13 +865,19 @@ index 03defe6..56af602 100644
 -		    touch_rd(st.se, SE_STATUS));
 -	}
 -	return err;
--}
-+/* ---- Himax -------------------------------------------------------------- */
++	for (unsigned i = 0; t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ACTIVE; ++i) {
++		if (i > 1000) {
++			return qup_abort(ETIMEDOUT);
++		}
++		delay(2);
++	}
++	(void)qup_set_state(QUP_ST_RESET);
++	return 0;
+ }
  
- static int
+-static int
 -touch_read(uint8_t addr, uint16_t reg, bool wide, uint8_t *buf, unsigned len)
-+hx_wr32(uint8_t reg, uint32_t v)
- {
+-{
 -	uint8_t ptr[2] = {(uint8_t)(reg >> 8), (uint8_t)reg};
 -	int err = touch_msg(addr, wide ? ptr : ptr + 1, wide ? 2u : 1u,
 -	    NULL, 0, true);
@@ -888,23 +886,24 @@ index 03defe6..56af602 100644
 -	}
 -	/* STOP_STRETCH on the pointer write retains the bus for a repeated START. */
 -	return touch_msg(addr, NULL, 0, buf, len, false);
+-}
++/* ---- Himax -------------------------------------------------------------- */
+ 
+ static int
+-touch_goodix_ack(void)
++hx_wr32(uint8_t reg, uint32_t v)
+ {
+-	const uint8_t ack[3] = {GOODIX_EVENT_REG >> 8, GOODIX_EVENT_REG & 0xffu, 0};
+-	return touch_msg(0x5d, ack, sizeof(ack), NULL, 0, false);
 +	uint8_t b[5] = { reg, (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24) };
 +	return qup_xfer(b, 5, NULL, 0);
  }
  
-+/* AHB read of one 32-bit word (Linux himax_bus_read, length 4). */
- static int
--touch_goodix_ack(void)
-+hx_ahb_read(uint32_t addr, uint32_t *out)
- {
--	const uint8_t ack[3] = {GOODIX_EVENT_REG >> 8, GOODIX_EVENT_REG & 0xffu, 0};
--	return touch_msg(0x5d, ack, sizeof(ack), NULL, 0, false);
--}
--
 -/* Raw read only: 0x8240 is the vendor's generic/older VERSION candidate,
 - * not a second accepted GT9896 identity. Never try a four-byte Berlin pointer:
 - * on this 16-bit IC the extra bytes would be register data writes. */
--static int
++/* AHB read of one 32-bit word (Linux himax_bus_read, length 4). */
+ static int
 -touch_probe_info(uint16_t reg, uint8_t *buf)
 -{
 -	memset(buf, 0xa5, 32);
@@ -919,11 +918,7 @@ index 03defe6..56af602 100644
 -			}
 -			printf("SWEET TOUCH: probe raw %#x: %s\n", reg + off, line);
 -		}
-+	uint8_t reg = 0x08, b[4];
-+	int e;
-+	if ((e = hx_wr32(0x00, addr)) || (e = hx_wr32(0x0c, 0x00))) {
-+		return e;
- 	}
+-	}
 -	return err;
 -}
 -
@@ -935,16 +930,21 @@ index 03defe6..56af602 100644
 -
 -static bool
 -touch_checksum(const uint8_t *buf, unsigned len)
--{
++hx_ahb_read(uint32_t addr, uint32_t *out)
+ {
 -	if (len < 2) {
 -		return false;
-+	if ((e = qup_xfer(&reg, 1, b, 4))) {
++	uint8_t reg = 0x08, b[4];
++	int e;
++	if ((e = hx_wr32(0x00, addr)) || (e = hx_wr32(0x0c, 0x00))) {
 +		return e;
  	}
 -	unsigned sum = 0;
 -	for (unsigned i = 0; i + 2 < len; ++i) {
 -		sum += buf[i];
--	}
++	if ((e = qup_xfer(&reg, 1, b, 4))) {
++		return e;
+ 	}
 -	return (sum & 0xffffu) == touch_be16(buf + len - 2);
 +	*out = (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
 +	return 0;
@@ -1013,11 +1013,11 @@ index 03defe6..56af602 100644
 +			    sum & 0xffu, ev[52], ev[0], ev[1], ev[2], ev[3]);
  		}
 -		return 0; /* no new touch frame: retain current contacts */
--	}
--	if (!touch_checksum(buf, GOODIX_HEAD_LEN)) {
--		return EIO; /* header untrusted: no write to the IC */
 +		return EAGAIN;
  	}
+-	if (!touch_checksum(buf, GOODIX_HEAD_LEN)) {
+-		return EIO; /* header untrusted: no write to the IC */
+-	}
 -	unsigned n = buf[2] & 15u;
 -	if (n > TOUCH_MAX) {
 -		(void)touch_goodix_ack();
@@ -1203,7 +1203,7 @@ index 03defe6..56af602 100644
 +t_thread(void *arg, wait_result_t result)
  {
 -	unsigned delay_s = 45;
-+	unsigned delay_s = 60, khz = 400, force_reset = 0, quiet = 0;
++	unsigned delay_s = 60, khz = 100, force_reset = 1, quiet = 0;
  	(void)arg;
  	(void)result;
 -	/*
@@ -1253,23 +1253,32 @@ index 03defe6..56af602 100644
 -	if (power_error) {
 -		printf("SWEET TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
 -		goto out;
-+	/* SDA/SCL: function 3 (blsp_i2c1), 2 mA, bias disabled (stock DT). */
-+	t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | (3u << 2));
-+	t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | (3u << 2));
++	/*
++	 * SDA/SCL: function 3 (blsp_i2c1), 2 mA. ABL leaves both lines low with
++	 * no pull (seen on hardware), so use the pad pull-ups (stock DT does the
++	 * same in its i2c_sleep state); s62tpull=0 selects bias-disable.
++	 */
++	uint32_t pull = 1;
++	(void)PE_parse_boot_argn("s62tpull", &pull, sizeof(pull));
++	uint32_t pcfg = (3u << 2) | (pull ? 3u : 0u);
++	t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | pcfg);
++	t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | pcfg);
++	/*
++	 * TP reset (gpio25): ABL leaves it as a pulled-down input, i.e. the touch
++	 * half of the TDDI is held in reset. Stock ts_reset_high: gpio, 16 mA,
++	 * output high. Pulse low 20 ms, then high (s62treset=0 skips this).
++	 */
 +	uint32_t rcfg = t_rd(t.rst, 0), rio = t_rd(t.rst, 4);
-+	bool rst_out = ((rcfg >> 2) & 0xfu) == 0 && (rcfg & (1u << 9));
 +	if (force_reset) {
-+		TLOG("reset pulse (s62treset=1)");
-+		t_wr(t.rst, 4, rio & ~2u);
-+		t_wr(t.rst, 0, (rcfg & ~0x3ffu) | (1u << 9));
++		t_wr(t.rst, 4, 0);
++		t_wr(t.rst, 0, (rcfg & ~0x3ffu) | (7u << 6) | (1u << 9));
 +		t_wait(20);
-+		t_wr(t.rst, 4, (rio & ~2u) | 2u);
-+		t_wait(300);
-+	} else if (rst_out && !(rio & 2u)) {
-+		TLOG("reset was held low; releasing\n");
-+		t_wr(t.rst, 4, rio | 2u);
-+		t_wait(300);
++		t_wr(t.rst, 4, 2u);
++		t_wait(200);
 +	}
++	TLOG("after setup: sda=%#x/%#x scl=%#x/%#x rst %#x/%#x -> %#x/%#x irq=%#x pull=%u reset=%u",
++	    t_rd(t.sda, 0), t_rd(t.sda, 4), t_rd(t.sda, 0x1000), t_rd(t.sda, 0x1004),
++	    rcfg, rio, t_rd(t.rst, 0), t_rd(t.rst, 4), t_rd(t.irq, 4), pull, force_reset);
 +
 +	uint32_t hw = t_rd(t.qup, QUP_HW_VERSION);
 +	t_wr(t.qup, QUP_SW_RESET, 1);
@@ -1320,7 +1329,7 @@ index 03defe6..56af602 100644
 +	int e = hx_ahb_read(0x900000d0u, &id);
 +	TLOG("himax@0x48 id err=%d raw=%#x ic=%#x i2c=%#x qup=%#x",
 +	    e, id, id >> 8, t.last_i2c, t.last_err);
-+	if (e == ENXIO && !force_reset) {
++	if (e == ENXIO) {
 +		printf("S62 TOUCH: no ACK; retry once after 500 ms\n");
 +		t_wait(500);
 +		e = hx_ahb_read(0x900000d0u, &id);
@@ -1404,7 +1413,7 @@ index 03defe6..56af602 100644
  }
  
  void
-@@ -640,21 +575,20 @@ sweet_touch_init(void)
+@@ -640,21 +584,20 @@ sweet_touch_init(void)
  {
  	int enabled = 1;
  	thread_t thread;
