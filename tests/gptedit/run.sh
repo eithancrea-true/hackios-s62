@@ -8,7 +8,7 @@ python3 - "$W/gpt_body.c" ../../xnu/patches/9000-*.patch <<'PY'
 import sys
 lines = open(sys.argv[2]).read().split('\n')
 i = next(k for k, l in enumerate(lines) if l.startswith('+ * S62 GPT editor')) - 1
-j = next(k for k in range(i, len(lines)) if lines[k] == '+sweet_ufs_init(void)') - 1
+j = next(k for k in range(i, len(lines)) if lines[k][1:] == 'sweet_ufs_init(void)') - 1
 body = [l[1:] for l in lines[i:j] if not l.startswith('+#include <sys/random.h>')]
 open(sys.argv[1], 'w').write('\n'.join(body) + '\n')
 PY
