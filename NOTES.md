@@ -89,6 +89,15 @@
   Android A pendiente de probar (debería arrancar como recién reseteado).
   Raíz de iOS: partición "ios" (boot-arg ufsroot=ios rd=ufsroot0).
 
+- 2026-11-10 23:50-23:53: **iOS 16.7.16 ARRANCA en el S62.** Raíz HFS+ en la partición "ios"
+  (iosroot.yml + ios-sweet, cifrada a la clave del usuario, descifrada/verificada en su PC,
+  `fastboot -S 256M flash ios`), kernel 8d5b1fb, boot-args rd=ufsroot0 ufsroot=ios ufsrw=1
+  rootrw=1 ignition_level=1 launchd_unsecure_cache=1 ... cpus=1 sweetlog=0, sweettouch/keys/usb=0.
+  launchd y muchos servicios arrancan y aparece el logo de Apple: el userland de iOS 16 corre en
+  el SDM660 (ARMv8.0), riesgo principal descartado (al menos hasta aquí).
+  Nota: fastboot de ABL se congela tras el flash grande (como en ios-sweet): usar
+  !S62_FASE3_BOOT.bat (solo boot_b + set-active + reboot) tras reiniciar a fastboot.
+
 ## Hallazgo útil
 - PAGE_RATIO 4: el userland ve páginas de 16K aunque el hardware sea 4K (como los SoC 4K de
   Apple con más de 1GB). Reduce el riesgo de "iOS 16 sobre 4K"; el de LSE/ARMv8.0 sigue.
