@@ -1,20 +1,33 @@
 diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
-index 2545cf9..b5230f8 100644
+index 2545cf9..8bf3301 100644
 --- a/iokit/Kernel/arm/SweetCPU.cpp
 +++ b/iokit/Kernel/arm/SweetCPU.cpp
-@@ -20,6 +20,7 @@
+@@ -20,6 +20,8 @@
  
  extern "C" void sweet_secondary_entry(void);
  extern "C" boolean_t sweet_cpu_signal_is_enabled(unsigned int cpu);
 +extern "C" void sweet_gic_dump(void);
++extern "C" boolean_t sweet_gic_retry(void);
  
  class SweetCPU;
  static SweetCPU *sweet_cpus[MAX_CPUS];
-@@ -161,12 +162,27 @@ SweetCPU::startAll(void *arg __unused, wait_result_t result __unused)
+@@ -161,12 +163,39 @@ SweetCPU::startAll(void *arg __unused, wait_result_t result __unused)
  			if (mach_absolute_time() > deadline) {
  				IOLog("SWEET CPU: cpu=%u mpidr=0x%x NOT alive after 5s\n",
  				    i, topology->cpus[i].phys_id);
 +				sweet_gic_dump();
++				if (i == 0 && sweet_gic_retry()) {
++					/* The rewrite stuck: give the pending SGI 5s to arrive. */
++					nanoseconds_to_deadline(5 * NSEC_PER_SEC, &deadline);
++					while (mach_absolute_time() < deadline && !sweet_cpu_signal_is_enabled(0)) {
++					}
++					if (sweet_cpu_signal_is_enabled(0)) {
++						IOLog("S62 FIX: SGI1 delivered after rewrite, continuing boot\n");
++						continue;
++					}
++					IOLog("S62 FIX: rewrite stuck but SGI1 still not delivered\n");
++					sweet_gic_dump();
++				}
 +				/* Keep the dump on screen before the panic log scrolls it away. */
 +				nanoseconds_to_deadline(60 * NSEC_PER_SEC, &deadline);
 +				while (mach_absolute_time() < deadline) {
@@ -343,10 +356,47 @@ index a645750..bab405b 100644
  				c_overage_swapped_limit = (uint32_t)size / c_seg_bufsize;
  
 diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
-index 6089db9..c3edc47 100644
+index 6089db9..e27aef2 100644
 --- a/pexpert/arm/pe_fiq.c
 +++ b/pexpert/arm/pe_fiq.c
-@@ -222,6 +222,46 @@ pe_init_fiq()
+@@ -26,6 +26,12 @@ static vm_offset_t gicd_base;
+ static vm_offset_t gicr_base;
+ static vm_offset_t gicr_size;
+ 
++#if defined(SWEET)
++/* S62 bring-up: redistributor state seen by pe_init_fiq() on the boot CPU. */
++static uint32_t s62_early_waker = 0xdead, s62_early_en = 0xdead, s62_early_pri = 0xdead;
++static unsigned long s62_early_off = 0xdead;
++#endif
++
+ static uint32_t
+ _gic_read32(vm_offset_t addr)
+ {
+@@ -148,6 +154,12 @@ pe_init_fiq()
+ 
+ 	// Mark this PE to be awake
+ 	uint32_t gicr_waker = gicr_read32(GICR_WAKER);
++#if defined(SWEET)
++	if (s62_early_waker == 0xdead) {
++		s62_early_waker = gicr_waker;
++		s62_early_off = (unsigned long)(gicr_pe_base - gicr_base);
++	}
++#endif
+ 	if (gicr_waker & GICR_WAKER_CHILDRENASLEEP) {
+ 		gicr_waker &= ~GICR_WAKER_PROCESSORSLEEP;
+ 
+@@ -176,6 +188,10 @@ pe_init_fiq()
+ 		gicr_write32(GICR_IPRIORITYR0 + i, 0xA0A0A0A0);
+ 	}
+ 	gicr_write32(GICR_ISENABLER0, (1U << sweet_vtimer_intid) | (1U << SWEET_IPI_SGI));
++	if (s62_early_en == 0xdead) {
++		s62_early_en = gicr_read32(GICR_ISENABLER0);
++		s62_early_pri = gicr_read32(GICR_IPRIORITYR0);
++	}
+ #else
+ 	// Configure timers and legacy FIQ to be group 0
+ 	gicr_write32(GICR_IGROUPR0, 0x81FFFFFF);
+@@ -222,6 +238,82 @@ pe_init_fiq()
  	__builtin_arm_isb(ISB_SY);
  #endif /* SWEET */
  }
@@ -358,6 +408,35 @@ index 6089db9..c3edc47 100644
 + * distributor) from "pending but not delivered" (CPU interface / masking).
 + */
 +void sweet_gic_dump(void);
++boolean_t sweet_gic_retry(void);
++
++/*
++ * Write the SGI/PPI configuration again and read it back at once. If it sticks
++ * now, the first write was lost (wrong frame or reset); if it still reads 0,
++ * the non-secure side cannot program these interrupts (Secure Group 0).
++ */
++boolean_t
++sweet_gic_retry(void)
++{
++	vm_offset_t gicr_pe_base = find_gicr_pe_base();
++	uint32_t want = (1U << sweet_vtimer_intid) | (1U << SWEET_IPI_SGI);
++	gicr_write32(GICR_IGROUPR0, 0xFFFFFFFF);
++	for (unsigned int i = 0; i < 32; i += 4) {
++		gicr_write32(GICR_IPRIORITYR0 + i, 0xA0A0A0A0);
++	}
++	gicr_write32(GICR_ISENABLER0, want);
++	__builtin_arm_dsb(DSB_SY);
++	uint32_t en = gicr_read32(GICR_ISENABLER0);
++	kprintf("S62 FIX: rewrite -> ISENABLER0=%x IPRIO0=%x IPRIO16=%x IGROUPR0=%x\n",
++	    en, gicr_read32(GICR_IPRIORITYR0), gicr_read32(GICR_IPRIORITYR0 + 16),
++	    gicr_read32(GICR_IGROUPR0));
++	/* SPI side for comparison: are any distributor enables visible to us? */
++	kprintf("S62 FIX: GICD ISENABLER1..4=%x %x %x %x IPRIO(32)=%x\n",
++	    gicd_read32(0x104), gicd_read32(0x108), gicd_read32(0x10c), gicd_read32(0x110),
++	    gicd_read32(0x420));
++	return (en & want) == want;
++}
++
 +void
 +sweet_gic_dump(void)
 +{
@@ -366,6 +445,13 @@ index 6089db9..c3edc47 100644
 +		return;
 +	}
 +	vm_offset_t gicr_pe_base = find_gicr_pe_base();
++	kprintf("S62 EARLY: off=%lx WAKER=%x ISENABLER0=%x IPRIO0=%x\n",
++	    s62_early_off, s62_early_waker, s62_early_en, s62_early_pri);
++	for (vm_offset_t o = 0; o + 0x20000 <= gicr_size && o < 0x100000; o += 0x20000) {
++		kprintf("S62 FRAME %lx: TYPER=%llx WAKER=%x EN0=%x PEND0=%x\n", (unsigned long)o,
++		    _gic_read64(gicr_base + o + GICR_TYPER), _gic_read32(gicr_base + o + GICR_WAKER),
++		    _gic_read32(gicr_base + o + GICR_ISENABLER0), _gic_read32(gicr_base + o + 0x10200));
++	}
 +	kprintf("S62 GIC: GICD_CTLR=%x TYPER=%x IIDR=%x\n",
 +	    gicd_read32(0x0), gicd_read32(0x4), gicd_read32(0x8));
 +	kprintf("S62 GIC: GICR off=%lx TYPER=%llx WAKER=%x CTLR=%x\n",
