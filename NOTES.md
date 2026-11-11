@@ -83,6 +83,12 @@
   PLAN: userdata -> 0x1b70000-0xc8f57ff (88843 MiB); "ios" HFS+ #69 0xc8f5800-0xe8f5fde
   (16384 MiB); entries CRC nuevo 0x1d8d276f. Revertir = userdata last 0xe8f5fde + vaciar #69.
 
+- 2026-11-10 21:50: GPT APLICADA en el S62 (emmcgpt=2): 4 escrituras verificadas + revalidación.
+  ABL confirma: userdata 0x15B0B00000 (88843 MiB, ext4), ios 0x4000FBE00 (16 GiB).
+  userdata formateada ext4 (22743808 bloques de 4K) y metadata borrada con fastboot.
+  Android A pendiente de probar (debería arrancar como recién reseteado).
+  Raíz de iOS: partición "ios" (boot-arg ufsroot=ios rd=ufsroot0).
+
 ## Hallazgo útil
 - PAGE_RATIO 4: el userland ve páginas de 16K aunque el hardware sea 4K (como los SoC 4K de
   Apple con más de 1GB). Reduce el riesgo de "iOS 16 sobre 4K"; el de LSE/ARMv8.0 sigue.
