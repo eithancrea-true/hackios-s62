@@ -74,10 +74,25 @@ index da0bbba..0d2d072 100644
  
  	mov		x0, #-1			// Failed
 diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
-index 00568d3..094db7d 100644
+index 00568d3..6c795f1 100644
 --- a/osfmk/arm/pmap/pmap.c
 +++ b/osfmk/arm/pmap/pmap.c
-@@ -10981,11 +10981,14 @@ static_assert((_COMM_PAGE32_BASE_ADDRESS & ~ARM_TT_L2_OFFMASK) >= VM_MAX_ADDRESS
+@@ -10897,6 +10897,14 @@ pmap_create_commpages(vm_map_address_t *kernel_data_addr, vm_map_address_t *kern
+ 		// comm page, but with new leaf index we've just generated.
+ 		commpage_text_va = (_COMM_PAGE64_BASE_ADDRESS & ~pt_attr_leaf_index_mask(pt_attr));
+ 		commpage_text_va |= (text_leaf_index << pt_attr_leaf_shift(pt_attr));
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++		/*
++		 * S62: 4K hardware pages with 16K VM pages (PAGE_RATIO 4, as on Apple's
++		 * 4K SoCs with more than 1GB): PTEs are written four at a time, so the
++		 * VA must be aligned to the VM page size, not the hardware one.
++		 */
++		commpage_text_va &= ~((vm_map_address_t)PAGE_MASK);
++#endif
+ 	} while ((commpage_text_va == _COMM_PAGE64_BASE_ADDRESS) || (commpage_text_va == _COMM_PAGE64_RO_ADDRESS)); // Try again if we collide (should be unlikely)
+ 
+ 	// Assert that this is empty
+@@ -10981,11 +10989,14 @@ static_assert((_COMM_PAGE32_BASE_ADDRESS & ~ARM_TT_L2_OFFMASK) >= VM_MAX_ADDRESS
   */
  
  #elif (ARM_PGSHIFT == 12)
