@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
-index 6b926fe..e98efef 100644
+index 6b926fe..3936638 100644
 --- a/bsd/dev/sweet_ufs.c
 +++ b/bsd/dev/sweet_ufs.c
 @@ -47,6 +47,7 @@ extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
@@ -39,7 +39,7 @@ index 6b926fe..e98efef 100644
  static LCK_GRP_DECLARE(sweet_ufs_grp, "sweet_ufs");
  static LCK_MTX_DECLARE(sweet_ufs_lock, &sweet_ufs_grp);
  
-@@ -141,6 +153,255 @@ dma_clean(uint32_t off, uint32_t len)
+@@ -141,6 +153,282 @@ dma_clean(uint32_t off, uint32_t len)
  	clean_dcache64((addr64_t)(su.dma_pa + off), len, TRUE);
  }
  
@@ -51,6 +51,8 @@ index 6b926fe..e98efef 100644
 + * the clock: on msm those wait for a power IRQ handshake we do not service.
 + */
 +#define SD_SYSADDR      0x00            /* v4 mode: 32-bit block count */
++#define SD_ADMA_LO      0x58
++#define SD_ADMA_HI      0x5c
 +#define SD_BLK          0x04            /* [15:0] size, [31:16] count */
 +#define SD_ARG          0x08
 +#define SD_CMD          0x0c            /* [15:0] transfer mode, [31:16] command */
@@ -74,6 +76,7 @@ index 6b926fe..e98efef 100644
 +#define INT_BUF_RD      (1u << 5)
 +#define INT_ERROR       (1u << 15)
 +
++#define TM_DMA          (1u << 0)
 +#define TM_BCE          (1u << 1)
 +#define TM_ACMD12       (1u << 2)
 +#define TM_READ         (1u << 4)
@@ -144,6 +147,48 @@ index 6b926fe..e98efef 100644
 +	}
 +}
 +
++/*
++ * ADMA2 descriptor table at DMA_UTRL (unused by the eMMC path) describing
++ * len bytes of the bounce buffer, in 32 KiB pieces. DMA select (HOST_CONTROL1
++ * bits 4:3) is left as ABL set it: 3 = 64-bit descriptors (12 bytes),
++ * 2 = 32-bit descriptors (8 bytes).
++ */
++#define ADMA_CHUNK      (32u << 10)
++#define ADMA_VALID      0x01
++#define ADMA_END        0x02
++#define ADMA_TRAN       0x20
++
++static int
++emmc_adma_prepare(uint32_t len)
++{
++	uint32_t sel = (emmc_rd(SD_HCTL) >> 3) & 3;
++	uint32_t dsz = sel == 3 ? 12 : 8;
++	uint64_t data = su.dma_pa + DMA_BOUNCE;
++	if ((sel != 2 && sel != 3) || (sel == 2 && ((data + len - 1) >> 32)) ||
++	    (len + ADMA_CHUNK - 1) / ADMA_CHUNK * dsz > DMA_UCD - DMA_UTRL) {
++		printf("SWEET EMMC: unsupported DMA select %u\n", sel);
++		return EINVAL;
++	}
++	uint8_t *t = (uint8_t *)(su.dma + DMA_UTRL);
++	uint32_t n = 0;
++	for (uint32_t off = 0; off < len; off += ADMA_CHUNK, n++) {
++		uint32_t piece = MIN(ADMA_CHUNK, len - off);
++		uint16_t attr = ADMA_VALID | ADMA_TRAN | (off + piece >= len ? ADMA_END : 0);
++		uint16_t l16 = (uint16_t)piece;
++		uint64_t a = data + off;
++		uint8_t *d = t + n * dsz;
++		memcpy(d, &attr, 2);
++		memcpy(d + 2, &l16, 2);
++		memcpy(d + 4, &a, dsz - 4);
++	}
++	dma_clean(DMA_UTRL, n * dsz);
++	dma_sync(DMA_BOUNCE, len);      /* no dirty lines over the DMA target */
++	uint64_t tpa = su.dma_pa + DMA_UTRL;
++	emmc_wr(SD_ADMA_LO, (uint32_t)tpa);
++	emmc_wr(SD_ADMA_HI, (uint32_t)(tpa >> 32));
++	return 0;
++}
++
 +/* One command with an R1 response; reads count sectors when count != 0. */
 +static int
 +emmc_cmd_read(uint32_t idx, uint32_t arg, uint32_t count, void *buf)
@@ -166,7 +211,10 @@ index 6b926fe..e98efef 100644
 +		if (emmc_rd(SD_HCTL2) & (1u << 28)) {   /* Host Version 4 Enable */
 +			emmc_wr(SD_SYSADDR, count);
 +		}
-+		mode = TM_READ | TM_BCE | (count > 1 ? (TM_MULTI | TM_ACMD12) : 0);
++		if (buf != (void *)(su.dma + DMA_BOUNCE) || emmc_adma_prepare(count * EMMC_BLOCK)) {
++			return EINVAL;
++		}
++		mode = TM_DMA | TM_READ | TM_BCE | (count > 1 ? (TM_MULTI | TM_ACMD12) : 0);
 +		flags |= CMDF_DATA;
 +	}
 +	emmc_wr(SD_ARG, arg);
@@ -189,57 +237,35 @@ index 6b926fe..e98efef 100644
 +		return 0;
 +	}
 +	/*
-+	 * Data: like Linux sdhci_read_block_pio(), go by PRESENT_STATE "buffer
-+	 * read enable", not by the BUF_RD status bit (on this host the status
-+	 * bit was seen to stay 0 while the buffer was full).
++	 * Data arrives by ADMA2 (set up by emmc_cmd_read's caller through
++	 * emmc_adma_prepare). PIO does not work on this host: buffer-read-enable
++	 * stays set and the data port only returns zeros.
 +	 */
 +	static bool diag_done;
-+	uint32_t *p = buf;
-+	for (uint32_t b = 0; b < count; b++) {
-+		nanoseconds_to_deadline(EMMC_TIMEOUT_NS, &deadline);
-+		while (!(emmc_rd(SD_PSTATE) & PS_BUF_RD_EN)) {
-+			uint32_t st = emmc_rd(SD_INT);
-+			if ((st & INT_ERROR) || mach_absolute_time() > deadline) {
-+				printf("SWEET EMMC: CMD%u block %u/%u: %s, status 0x%08x pstate 0x%08x\n",
-+				    idx, b, count, (st & INT_ERROR) ? "error" : "no data",
-+				    st, emmc_rd(SD_PSTATE));
-+				emmc_reset_lines();
-+				return (st & INT_ERROR) ? EIO : ETIMEDOUT;
-+			}
-+		}
-+		emmc_wr(SD_INT, INT_BUF_RD);
-+		for (uint32_t w = 0; w < EMMC_BLOCK / 4; w++) {
-+			*p++ = emmc_rd(SD_DATA);
-+		}
-+	}
-+	/* More data than asked for would mean a wrong block size or count. */
-+	uint32_t extra = 0, scratch;
-+	while ((emmc_rd(SD_PSTATE) & PS_BUF_RD_EN) && extra < 64 * EMMC_BLOCK / 4) {
-+		scratch = emmc_rd(SD_DATA);
-+		(void)scratch;
-+		extra++;
-+	}
-+	/* Transfer end: XFER_DONE, or DAT no longer busy. */
 +	nanoseconds_to_deadline(EMMC_TIMEOUT_NS, &deadline);
-+	while (!(emmc_rd(SD_INT) & (INT_XFER_DONE | INT_ERROR)) &&
-+	    (emmc_rd(SD_PSTATE) & PS_DAT_INHIBIT)) {
++	uint32_t st;
++	while (!((st = emmc_rd(SD_INT)) & (INT_XFER_DONE | INT_ERROR))) {
 +		if (mach_absolute_time() > deadline) {
 +			error = ETIMEDOUT;
 +			break;
 +		}
 +	}
-+	uint32_t st = emmc_rd(SD_INT);
-+	if (!diag_done || extra || error || (st & INT_ERROR)) {
-+		const uint8_t *d = buf;
-+		printf("SWEET EMMC: CMD%u n=%u blk 0x%08x cmd 0x%08x int 0x%08x pstate 0x%08x extra %u words%s\n",
-+		    idx, count, emmc_rd(SD_BLK), emmc_rd(SD_CMD), st, emmc_rd(SD_PSTATE), extra,
-+		    error ? " TIMEOUT" : "");
-+		printf("SWEET EMMC: data %02x%02x%02x%02x %02x%02x%02x%02x ... [510]=%02x%02x\n",
-+		    d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[510], d[511]);
-+		diag_done = true;
-+	}
 +	if (st & INT_ERROR) {
 +		error = EIO;
++	}
++	if (!error) {
++		dma_sync(DMA_BOUNCE, count * EMMC_BLOCK);
++	}
++	if (!diag_done || error) {
++		const uint8_t *d = buf;
++		printf("SWEET EMMC: CMD%u n=%u ADMA int 0x%08x pstate 0x%08x adma_err 0x%x%s\n",
++		    idx, count, st, emmc_rd(SD_PSTATE), emmc_rd(0x54) & 0xff,
++		    error == ETIMEDOUT ? " TIMEOUT" : "");
++		if (!error) {
++			printf("SWEET EMMC: data %02x%02x%02x%02x %02x%02x%02x%02x ... [510]=%02x%02x\n",
++			    d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[510], d[511]);
++		}
++		diag_done = true;
 +	}
 +	if (error) {
 +		emmc_reset_lines();
@@ -265,7 +291,8 @@ index 6b926fe..e98efef 100644
 +{
 +	uint32_t apps = *(volatile uint32_t *)(su.gcc + GCC_SDCC1_APPS);
 +	uint32_t ahb = *(volatile uint32_t *)(su.gcc + GCC_SDCC1_AHB);
-+	printf("SWEET EMMC: GCC SDCC1 apps 0x%08x ahb 0x%08x\n", apps, ahb);
++	printf("SWEET EMMC: GCC SDCC1 apps 0x%08x ahb 0x%08x ice 0x%08x\n", apps, ahb,
++	    *(volatile uint32_t *)(su.gcc + 0x00c));
 +	if ((apps | ahb) & CBCR_CLK_OFF) {
 +		/* Touching an unclocked host can hang the bus: stop here. */
 +		printf("SWEET EMMC: SDCC1 clocks are off, not touching the host\n");
@@ -295,7 +322,7 @@ index 6b926fe..e98efef 100644
  /*
   * One SCSI command in slot 0, data (if any) to/from the bounce buffer
   * (to the device when write is set). Returns 0 or an errno.
-@@ -260,6 +521,9 @@ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
+@@ -260,6 +548,9 @@ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
  static int
  ufs_read_blocks(uint64_t lba, uint32_t count)
  {
@@ -305,7 +332,7 @@ index 6b926fe..e98efef 100644
  	if (lba > UINT32_MAX || count > BOUNCE_SIZE / UFS_BLOCK) {
  		return EINVAL;
  	}
-@@ -284,6 +548,9 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
+@@ -284,6 +575,9 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
  		printf("SWEET UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
  		return EPERM;
  	}
@@ -315,7 +342,7 @@ index 6b926fe..e98efef 100644
  	uint8_t cdb[10] = {
  		0x2a, 0,
  		(uint8_t)(lba >> 24), (uint8_t)(lba >> 16), (uint8_t)(lba >> 8), (uint8_t)lba,
-@@ -295,6 +562,9 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
+@@ -295,6 +589,9 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
  static int
  ufs_sync_cache(void)
  {
@@ -325,7 +352,7 @@ index 6b926fe..e98efef 100644
  	static const uint8_t cdb[10] = { 0x35 };       /* SYNCHRONIZE CACHE(10), whole LUN */
  	return ufs_scsi(cdb, sizeof(cdb), 0, false);
  }
-@@ -324,6 +594,50 @@ ufs_find_partition(const char *want)
+@@ -324,6 +621,50 @@ ufs_find_partition(const char *want)
  	if (error) {
  		return error;
  	}
@@ -376,7 +403,7 @@ index 6b926fe..e98efef 100644
  	for (uint32_t i = 0; i < nent; i++) {
  		const uint8_t *e = b + i * esz;
  		char name[37];
-@@ -592,11 +906,25 @@ sweet_ufs_init(void)
+@@ -592,11 +933,25 @@ sweet_ufs_init(void)
  	char want[64] = "userdata";
  	int error;
  
@@ -404,7 +431,7 @@ index 6b926fe..e98efef 100644
  	}
  	PE_parse_boot_argn("ufsroot", want, sizeof(want));
  	uint32_t rw = 0;
-@@ -622,6 +950,41 @@ sweet_ufs_init(void)
+@@ -622,6 +977,41 @@ sweet_ufs_init(void)
  	su.secsize = DEV_BSIZE;
  
  	lck_mtx_lock(&sweet_ufs_lock);
@@ -446,7 +473,7 @@ index 6b926fe..e98efef 100644
  	error = ufs_take_over_host();
  	if (!error) {
  		static const uint8_t tur[6] = { 0x00 };
-@@ -637,6 +1000,7 @@ sweet_ufs_init(void)
+@@ -637,6 +1027,7 @@ sweet_ufs_init(void)
  		return error;
  	}
  
@@ -454,7 +481,7 @@ index 6b926fe..e98efef 100644
  	su.bmajor = bdevsw_add(-1, &sweet_ufs_bdevsw);
  	if (su.bmajor < 0) {
  		return ENXIO;
-@@ -649,7 +1013,7 @@ sweet_ufs_init(void)
+@@ -649,7 +1040,7 @@ sweet_ufs_init(void)
  	devfs_make_node(su.bdev, DEVFS_BLOCK, UID_ROOT, GID_OPERATOR, 0640, "ufsroot0");
  	devfs_make_node(makedev(su.cmajor, 0), DEVFS_CHAR, UID_ROOT, GID_OPERATOR, 0640, "rufsroot0");
  	/* Only now, with the partition bounds known, can writes be allowed. */
@@ -463,7 +490,7 @@ index 6b926fe..e98efef 100644
  	su.ready = true;
  	printf("SWEET UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
  	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
-@@ -813,9 +1177,19 @@ sweet_ufs_rootdev(dev_t *dev)
+@@ -813,9 +1204,19 @@ sweet_ufs_rootdev(dev_t *dev)
  {
  	if (!su.ready) {
  		int error = sweet_ufs_init();
