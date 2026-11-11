@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
-index 6b926fe..3936638 100644
+index 6b926fe..7890306 100644
 --- a/bsd/dev/sweet_ufs.c
 +++ b/bsd/dev/sweet_ufs.c
 @@ -47,6 +47,7 @@ extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
@@ -39,7 +39,7 @@ index 6b926fe..3936638 100644
  static LCK_GRP_DECLARE(sweet_ufs_grp, "sweet_ufs");
  static LCK_MTX_DECLARE(sweet_ufs_lock, &sweet_ufs_grp);
  
-@@ -141,6 +153,282 @@ dma_clean(uint32_t off, uint32_t len)
+@@ -141,6 +153,297 @@ dma_clean(uint32_t off, uint32_t len)
  	clean_dcache64((addr64_t)(su.dma_pa + off), len, TRUE);
  }
  
@@ -189,9 +189,9 @@ index 6b926fe..3936638 100644
 +	return 0;
 +}
 +
-+/* One command with an R1 response; reads count sectors when count != 0. */
++/* One command with an R1 response; moves count sectors (read or write) when count != 0. */
 +static int
-+emmc_cmd_read(uint32_t idx, uint32_t arg, uint32_t count, void *buf)
++emmc_cmd_data(uint32_t idx, uint32_t arg, uint32_t count, void *buf, bool write)
 +{
 +	uint64_t deadline;
 +	uint32_t inhibit = PS_CMD_INHIBIT | (count ? PS_DAT_INHIBIT : 0);
@@ -214,7 +214,7 @@ index 6b926fe..3936638 100644
 +		if (buf != (void *)(su.dma + DMA_BOUNCE) || emmc_adma_prepare(count * EMMC_BLOCK)) {
 +			return EINVAL;
 +		}
-+		mode = TM_DMA | TM_READ | TM_BCE | (count > 1 ? (TM_MULTI | TM_ACMD12) : 0);
++		mode = TM_DMA | (write ? 0 : TM_READ) | TM_BCE | (count > 1 ? (TM_MULTI | TM_ACMD12) : 0);
 +		flags |= CMDF_DATA;
 +	}
 +	emmc_wr(SD_ARG, arg);
@@ -253,7 +253,7 @@ index 6b926fe..3936638 100644
 +	if (st & INT_ERROR) {
 +		error = EIO;
 +	}
-+	if (!error) {
++	if (!error && !write) {
 +		dma_sync(DMA_BOUNCE, count * EMMC_BLOCK);
 +	}
 +	if (!diag_done || error) {
@@ -281,8 +281,23 @@ index 6b926fe..3936638 100644
 +		return EINVAL;
 +	}
 +	/* High capacity eMMC: sector addressing. */
-+	return emmc_cmd_read(count > 1 ? 18 : 17, (uint32_t)lba, count,
-+	           (void *)(su.dma + DMA_BOUNCE));
++	return emmc_cmd_data(count > 1 ? 18 : 17, (uint32_t)lba, count,
++	           (void *)(su.dma + DMA_BOUNCE), false);
++}
++
++/*
++ * Write count sectors from the bounce buffer. No bounds of its own: callers
++ * are ufs_write_blocks() (partition bounds) and the GPT editor (GPT sectors).
++ * For writes SDHCI raises transfer complete only after the card's busy ends.
++ */
++static int
++emmc_write_blocks(uint64_t lba, uint32_t count)
++{
++	if (count == 0 || count > BOUNCE_SIZE / EMMC_BLOCK || lba + count > UINT32_MAX) {
++		return EINVAL;
++	}
++	return emmc_cmd_data(count > 1 ? 25 : 24, (uint32_t)lba, count,
++	           (void *)(su.dma + DMA_BOUNCE), true);
 +}
 +
 +/* Check that ABL left the host clocked and idle, and in legacy (non-CQ) mode. */
@@ -322,7 +337,7 @@ index 6b926fe..3936638 100644
  /*
   * One SCSI command in slot 0, data (if any) to/from the bounce buffer
   * (to the device when write is set). Returns 0 or an errno.
-@@ -260,6 +548,9 @@ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
+@@ -260,6 +563,9 @@ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
  static int
  ufs_read_blocks(uint64_t lba, uint32_t count)
  {
@@ -332,17 +347,17 @@ index 6b926fe..3936638 100644
  	if (lba > UINT32_MAX || count > BOUNCE_SIZE / UFS_BLOCK) {
  		return EINVAL;
  	}
-@@ -284,6 +575,9 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
+@@ -284,6 +590,9 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
  		printf("SWEET UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
  		return EPERM;
  	}
 +	if (su.emmc) {
-+		return EROFS;                   /* S62: eMMC writes not implemented yet */
++		return emmc_write_blocks(lba, count);
 +	}
  	uint8_t cdb[10] = {
  		0x2a, 0,
  		(uint8_t)(lba >> 24), (uint8_t)(lba >> 16), (uint8_t)(lba >> 8), (uint8_t)lba,
-@@ -295,6 +589,9 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
+@@ -295,6 +604,9 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
  static int
  ufs_sync_cache(void)
  {
@@ -352,7 +367,7 @@ index 6b926fe..3936638 100644
  	static const uint8_t cdb[10] = { 0x35 };       /* SYNCHRONIZE CACHE(10), whole LUN */
  	return ufs_scsi(cdb, sizeof(cdb), 0, false);
  }
-@@ -324,6 +621,50 @@ ufs_find_partition(const char *want)
+@@ -324,6 +636,50 @@ ufs_find_partition(const char *want)
  	if (error) {
  		return error;
  	}
@@ -403,7 +418,263 @@ index 6b926fe..3936638 100644
  	for (uint32_t i = 0; i < nent; i++) {
  		const uint8_t *e = b + i * esz;
  		char name[37];
-@@ -592,11 +933,25 @@ sweet_ufs_init(void)
+@@ -583,6 +939,255 @@ static const struct cdevsw sweet_ufs_cdevsw = {
+ 	.d_type       = D_DISK,
+ };
+ 
++/*
++ * S62 GPT editor (boot-arg emmcgpt=1 plan, =2 apply; emmcgptmib= size of the
++ * new partition, default 16384). Moves the end of "userdata" down and adds an
++ * HFS+ partition named "ios" in the freed space, in a free entry slot.
++ * Everything is validated first (both headers and both entry arrays, CRCs,
++ * no overlap); the only sectors ever written are the two GPT entry arrays and
++ * headers, the backup first and the primary last, each read back and compared.
++ */
++#include <sys/random.h>
++
++static uint8_t gpt_ph[EMMC_BLOCK], gpt_bh[EMMC_BLOCK];
++static uint8_t gpt_ent[128 * 128], gpt_bent[128 * 128];
++
++static uint32_t
++gpt_crc32(const uint8_t *p, size_t n)
++{
++	uint32_t c = 0xffffffffu;
++	while (n--) {
++		c ^= *p++;
++		for (int k = 0; k < 8; k++) {
++			c = (c >> 1) ^ (0xedb88320u & (0u - (c & 1)));
++		}
++	}
++	return ~c;
++}
++
++static inline uint32_t
++rd32(const uint8_t *p)
++{
++	uint32_t v; memcpy(&v, p, 4); return v;
++}
++static inline uint64_t
++rd64(const uint8_t *p)
++{
++	uint64_t v; memcpy(&v, p, 8); return v;
++}
++static inline void
++wr32(uint8_t *p, uint32_t v)
++{
++	memcpy(p, &v, 4);
++}
++static inline void
++wr64(uint8_t *p, uint64_t v)
++{
++	memcpy(p, &v, 8);
++}
++
++static void
++gpt_name(const uint8_t *e, char *out)
++{
++	unsigned c;
++	for (c = 0; c < 36; c++) {
++		uint16_t ch = (uint16_t)(e[56 + 2 * c] | e[57 + 2 * c] << 8);
++		if (ch == 0 || ch > 0x7f) {
++			break;
++		}
++		out[c] = (char)ch;
++	}
++	out[c] = 0;
++}
++
++static bool
++gpt_empty(const uint8_t *e)
++{
++	for (int i = 0; i < 16; i++) {
++		if (e[i]) {
++			return false;
++		}
++	}
++	return true;
++}
++
++/* Read and fully validate one header and its entries. */
++static int
++gpt_load(uint64_t hlba, uint8_t *hdr, uint8_t *ent, const char *which)
++{
++	int error = emmc_read_blocks(hlba, 1);
++	if (error) {
++		return error;
++	}
++	memcpy(hdr, (void *)(su.dma + DMA_BOUNCE), EMMC_BLOCK);
++	uint32_t hsize = rd32(hdr + 12), hcrc = rd32(hdr + 16);
++	uint32_t nent = rd32(hdr + 80), esz = rd32(hdr + 84);
++	if (memcmp(hdr, "EFI PART", 8) != 0 || hsize < 92 || hsize > EMMC_BLOCK ||
++	    esz != 128 || nent == 0 || nent > 128 || rd64(hdr + 24) != hlba) {
++		printf("GPTEDIT: %s header at 0x%llx invalid\n", which, hlba);
++		return EINVAL;
++	}
++	uint8_t tmp[EMMC_BLOCK];
++	memcpy(tmp, hdr, hsize);
++	wr32(tmp + 16, 0);
++	if (gpt_crc32(tmp, hsize) != hcrc) {
++		printf("GPTEDIT: %s header CRC mismatch\n", which);
++		return EINVAL;
++	}
++	uint32_t bytes = nent * esz, sectors = (bytes + EMMC_BLOCK - 1) / EMMC_BLOCK;
++	error = emmc_read_blocks(rd64(hdr + 72), sectors);
++	if (error) {
++		return error;
++	}
++	memcpy(ent, (void *)(su.dma + DMA_BOUNCE), sectors * EMMC_BLOCK);
++	if (gpt_crc32(ent, bytes) != rd32(hdr + 88)) {
++		printf("GPTEDIT: %s entries CRC mismatch\n", which);
++		return EINVAL;
++	}
++	return 0;
++}
++
++static void
++gpt_seal(uint8_t *hdr, const uint8_t *ent)
++{
++	wr32(hdr + 88, gpt_crc32(ent, rd32(hdr + 80) * rd32(hdr + 84)));
++	wr32(hdr + 16, 0);
++	wr32(hdr + 16, gpt_crc32(hdr, rd32(hdr + 12)));
++}
++
++/* Write sectors from buf, then read them back and compare. */
++static int
++gpt_write_verify(uint64_t lba, const uint8_t *buf, uint32_t sectors, const char *what)
++{
++	memcpy((void *)(su.dma + DMA_BOUNCE), buf, sectors * EMMC_BLOCK);
++	int error = emmc_write_blocks(lba, sectors);
++	if (!error) {
++		bzero((void *)(su.dma + DMA_BOUNCE), sectors * EMMC_BLOCK);
++		error = emmc_read_blocks(lba, sectors);
++	}
++	if (!error && memcmp((void *)(su.dma + DMA_BOUNCE), buf, sectors * EMMC_BLOCK) != 0) {
++		error = EIO;
++	}
++	printf("GPTEDIT: write %s (%u sectors at 0x%llx): %s (%d)\n", what, sectors, lba,
++	    error ? "FAILED" : "verified", error);
++	return error;
++}
++
++static int
++emmc_gpt_split(uint32_t mode, uint32_t mib)
++{
++	int error;
++	if ((error = gpt_load(1, gpt_ph, gpt_ent, "primary"))) {
++		return error;
++	}
++	uint64_t alt = rd64(gpt_ph + 32);
++	if ((error = gpt_load(alt, gpt_bh, gpt_bent, "backup"))) {
++		return error;
++	}
++	uint32_t nent = rd32(gpt_ph + 80), esz = rd32(gpt_ph + 84);
++	uint32_t esec = (nent * esz + EMMC_BLOCK - 1) / EMMC_BLOCK;
++	if (rd64(gpt_bh + 32) != 1 || rd32(gpt_bh + 80) != nent ||
++	    memcmp(gpt_ent, gpt_bent, nent * esz) != 0) {
++		printf("GPTEDIT: primary and backup GPT differ, not touching anything\n");
++		return EINVAL;
++	}
++	printf("GPTEDIT: GPT OK: %u entries, usable 0x%llx-0x%llx, backup header 0x%llx, entries 0x%llx/0x%llx\n",
++	    nent, rd64(gpt_ph + 40), rd64(gpt_ph + 48), alt, rd64(gpt_ph + 72), rd64(gpt_bh + 72));
++
++	int ud = -1, freeslot = -1;
++	char name[37];
++	for (uint32_t i = 0; i < nent; i++) {
++		const uint8_t *e = gpt_ent + i * esz;
++		if (gpt_empty(e)) {
++			if (freeslot < 0) {
++				freeslot = (int)i;
++			}
++			continue;
++		}
++		gpt_name(e, name);
++		if (strcmp(name, "ios") == 0) {
++			printf("GPTEDIT: an \"ios\" partition already exists (#%u, 0x%llx-0x%llx)\n",
++			    i, rd64(e + 32), rd64(e + 40));
++			return EEXIST;
++		}
++		if (strcmp(name, "userdata") == 0) {
++			ud = (int)i;
++		}
++	}
++	if (ud < 0 || freeslot < 0) {
++		printf("GPTEDIT: userdata #%d, free slot #%d: cannot proceed\n", ud, freeslot);
++		return ENOENT;
++	}
++	uint8_t *u = gpt_ent + ud * esz;
++	uint64_t ufirst = rd64(u + 32), ulast = rd64(u + 40);
++	uint64_t shrink = (uint64_t)mib << 11;  /* MiB -> 512 B sectors */
++	if (mib < 1024 || ulast + 1 < ufirst + shrink + (8ull << 21)) {
++		printf("GPTEDIT: %u MiB does not fit (userdata 0x%llx-0x%llx)\n", mib, ufirst, ulast);
++		return EINVAL;
++	}
++	uint64_t ifirst = (ulast + 1 - shrink) & ~2047ull;      /* 1 MiB aligned */
++	uint64_t ilast = ulast, nulast = ifirst - 1;
++	/* The new range must not overlap anything but userdata itself. */
++	for (uint32_t i = 0; i < nent; i++) {
++		const uint8_t *e = gpt_ent + i * esz;
++		if (i == (uint32_t)ud || gpt_empty(e)) {
++			continue;
++		}
++		if (rd64(e + 32) <= ilast && rd64(e + 40) >= ifirst) {
++			gpt_name(e, name);
++			printf("GPTEDIT: new range overlaps \"%s\"\n", name);
++			return EINVAL;
++		}
++	}
++	if (ilast > rd64(gpt_ph + 48)) {
++		printf("GPTEDIT: userdata ends past the last usable LBA\n");
++		return EINVAL;
++	}
++	printf("GPTEDIT: PLAN userdata #%d: 0x%llx-0x%llx (%llu MiB) -> 0x%llx-0x%llx (%llu MiB)\n",
++	    ud, ufirst, ulast, (ulast - ufirst + 1) >> 11, ufirst, nulast, (nulast - ufirst + 1) >> 11);
++	printf("GPTEDIT: PLAN new \"ios\" (HFS+) #%d: 0x%llx-0x%llx (%llu MiB)\n",
++	    freeslot, ifirst, ilast, (ilast - ifirst + 1) >> 11);
++
++	/* Build the new entry array (identical in both copies). */
++	wr64(u + 40, nulast);
++	uint8_t *n = gpt_ent + freeslot * esz;
++	bzero(n, esz);
++	static const uint8_t hfs[16] = { 0x00, 0x53, 0x46, 0x48, 0x00, 0x00, 0xaa, 0x11,
++		                         0xaa, 0x11, 0x00, 0x30, 0x65, 0x43, 0xec, 0xac };
++	memcpy(n, hfs, 16);
++	read_frandom(n + 16, 16);
++	n[16 + 7] = (uint8_t)((n[16 + 7] & 0x0f) | 0x40);      /* version 4 */
++	n[16 + 8] = (uint8_t)((n[16 + 8] & 0x3f) | 0x80);      /* RFC 4122 variant */
++	wr64(n + 32, ifirst);
++	wr64(n + 40, ilast);
++	n[56] = 'i'; n[58] = 'o'; n[60] = 's';
++	memcpy(gpt_bent, gpt_ent, nent * esz);
++	uint32_t oldcrc = rd32(gpt_ph + 88);
++	gpt_seal(gpt_ph, gpt_ent);
++	gpt_seal(gpt_bh, gpt_bent);
++	printf("GPTEDIT: entries CRC 0x%08x -> 0x%08x, headers 0x%08x/0x%08x\n",
++	    oldcrc, rd32(gpt_ph + 88), rd32(gpt_ph + 16), rd32(gpt_bh + 16));
++	if (mode != 2) {
++		printf("GPTEDIT: plan only (emmcgpt=1): nothing written\n");
++		return 0;
++	}
++	/* Backup copy first, primary last. */
++	if ((error = gpt_write_verify(rd64(gpt_bh + 72), gpt_bent, esec, "backup entries")) ||
++	    (error = gpt_write_verify(alt, gpt_bh, 1, "backup header")) ||
++	    (error = gpt_write_verify(rd64(gpt_ph + 72), gpt_ent, esec, "primary entries")) ||
++	    (error = gpt_write_verify(1, gpt_ph, 1, "primary header"))) {
++		return error;
++	}
++	/* Final check: both copies load and validate from the device. */
++	if ((error = gpt_load(1, gpt_ph, gpt_ent, "primary")) ||
++	    (error = gpt_load(alt, gpt_bh, gpt_bent, "backup"))) {
++		printf("GPTEDIT: re-validation FAILED (%d)\n", error);
++		return error;
++	}
++	printf("GPTEDIT: DONE: both GPT copies rewritten and validated\n");
++	return 0;
++}
++
+ static int
+ sweet_ufs_init(void)
+ {
+@@ -592,11 +1197,25 @@ sweet_ufs_init(void)
  	char want[64] = "userdata";
  	int error;
  
@@ -431,7 +702,7 @@ index 6b926fe..3936638 100644
  	}
  	PE_parse_boot_argn("ufsroot", want, sizeof(want));
  	uint32_t rw = 0;
-@@ -622,6 +977,41 @@ sweet_ufs_init(void)
+@@ -622,6 +1241,48 @@ sweet_ufs_init(void)
  	su.secsize = DEV_BSIZE;
  
  	lck_mtx_lock(&sweet_ufs_lock);
@@ -464,6 +735,13 @@ index 6b926fe..3936638 100644
 +			absolutetime_to_nanoseconds(mach_absolute_time() - t0, &ns);
 +			printf("SWEET EMMC: 4 MiB multi-block read: %d, %llu ms\n", e3, ns / NSEC_PER_MSEC);
 +		}
++		uint32_t gptmode = 0, gptmib = 16384;
++		PE_parse_boot_argn("emmcgpt", &gptmode, sizeof(gptmode));
++		PE_parse_boot_argn("emmcgptmib", &gptmib, sizeof(gptmib));
++		if (gptmode == 1 || gptmode == 2) {
++			int ge = emmc_gpt_split(gptmode, gptmib);
++			printf("GPTEDIT: result %d\n", ge);
++		}
 +		lck_mtx_unlock(&sweet_ufs_lock);
 +		if (error) {
 +			return error;
@@ -473,7 +751,7 @@ index 6b926fe..3936638 100644
  	error = ufs_take_over_host();
  	if (!error) {
  		static const uint8_t tur[6] = { 0x00 };
-@@ -637,6 +1027,7 @@ sweet_ufs_init(void)
+@@ -637,6 +1298,7 @@ sweet_ufs_init(void)
  		return error;
  	}
  
@@ -481,7 +759,7 @@ index 6b926fe..3936638 100644
  	su.bmajor = bdevsw_add(-1, &sweet_ufs_bdevsw);
  	if (su.bmajor < 0) {
  		return ENXIO;
-@@ -649,7 +1040,7 @@ sweet_ufs_init(void)
+@@ -649,7 +1311,7 @@ sweet_ufs_init(void)
  	devfs_make_node(su.bdev, DEVFS_BLOCK, UID_ROOT, GID_OPERATOR, 0640, "ufsroot0");
  	devfs_make_node(makedev(su.cmajor, 0), DEVFS_CHAR, UID_ROOT, GID_OPERATOR, 0640, "rufsroot0");
  	/* Only now, with the partition bounds known, can writes be allowed. */
@@ -490,7 +768,7 @@ index 6b926fe..3936638 100644
  	su.ready = true;
  	printf("SWEET UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
  	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
-@@ -813,9 +1204,19 @@ sweet_ufs_rootdev(dev_t *dev)
+@@ -813,9 +1475,19 @@ sweet_ufs_rootdev(dev_t *dev)
  {
  	if (!su.ready) {
  		int error = sweet_ufs_init();
