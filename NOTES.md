@@ -119,3 +119,17 @@
 2. Driver eMMC (SDHCI sdhc_1 @0xc0c4000) para montar root.
 3. Imagen de sistema iOS en userdata (borra Android; confirmar antes) y prueba de userland.
 4. Guardar en el repo unas tools propias (ADT/payload/QEMU) en vez de adaptar las de ios-sweet al vuelo.
+
+## Entrada: botones y táctil (en curso)
+
+- Botones (`bsd/dev/sweet_keys.c`, reescrito para el S62): árbitro SPMI v3 del SDM660 (core 0x0800f000,
+  mapa APID en core+0x800+4n, observer 0x09400000 + 0x8000*apid, EE 0). Solo lecturas EXT_READL.
+  PON PM660 RT 0x0810: bit0 KPDPWR (power), bit1 RESIN (DTB stock: linux,code 115 = vol+).
+  Mapa por boot-args (código 0x800|bit = PON, 0x0nn = PM660 GPIO n, 0x2nn = PM660L GPIO n, 0 = nada):
+  `s62kpwr=0x800 s62kvu=0x801 s62kvd=0x207 s62khome=0x00b` (vol- y home son suposiciones; el driver
+  registra cada cambio de cualquier GPIO de PMIC configurado como entrada: "S62 KEYS: gpio pm660l-7 level 0").
+- Táctil (`bsd/dev/sweet_touch.c`, reescrito): Himax HX83112A en blsp_i2c1 (QUP 0x0c175000, pines gpio2/3
+  función 3), dirección 0x48, IRQ gpio45 (sur), reset gpio25 (norte, no se toca salvo `s62treset=1`).
+  QUP v2 en modo FIFO con tags V2, sondeo; eventos de 56 bytes desde el registro 0x30 (formato de
+  Linux himax_hx83112b.c). Arranca `sweettouchdelay` s (60 por defecto) después de montar la raíz.
+  `s62ti2c=100` baja el bus a 100 kHz. SweetHID usa ahora el tamaño real del panel (1080x2160).
