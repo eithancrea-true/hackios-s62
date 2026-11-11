@@ -51,13 +51,21 @@
 - 7b602ec: sondeo sin IOSleep para la CPU 0 y volcado `S62 GIC:`/`S62 TMR:` tras 5 s
   (espera 60 s antes del pánico). En QEMU imprime valores de referencia al funcionar.
 
+- 88b1da2 (2026-11-10 20:37): **HITO en hardware.** Tras 5 s sin SGI1, `sweet_gic_retry()`
+  reescribe IGROUPR0/IPRIORITYR0/ISENABLER0 del GICR de la CPU 0; ahora SÍ se quedan
+  (IPRIORITYR0=a0a0a0a0) y SGI1 llega: "SWEET CPU: 1/1 CPUs initialized, SGI1 verified".
+  El kernel sigue (MAC, AMFI, sandbox, HFS, red, Skywalk) hasta
+  "Waiting on IOMedia Apple_HFS", igual que en QEMU. Timer e interrupciones funcionan.
+  Conclusión: la primera escritura en pe_init_fiq se pierde (TODO: entender por qué; ver
+  línea `S62 EARLY` y hacer la reescritura en el sitio correcto en vez de tras 5 s).
+  GIC: ARM GIC-500 (IIDR 0x1143b), 5 bits de prioridad, SecurityExtn=1.
+
 ## Hallazgo útil
 - PAGE_RATIO 4: el userland ve páginas de 16K aunque el hardware sea 4K (como los SoC 4K de
   Apple con más de 1GB). Reduce el riesgo de "iOS 16 sobre 4K"; el de LSE/ARMv8.0 sigue.
 
 ## Siguiente
-1. Probar en el teléfono: imagen local `s62-shim/xnu8796/s62-boot-xnu8796.img` (fastboot boot,
-   temporal). Boot-args: cpus=1 sweetkeys=0 sweettouch=0 sweetusb=0 wdt=-1. PENDIENTE resultado.
+1. HECHO: kernel arranca en el teléfono hasta la espera del disco raíz (cpus=1).
 2. Driver eMMC (SDHCI sdhc_1 @0xc0c4000) para montar root.
 3. Imagen de sistema iOS en userdata (borra Android; confirmar antes) y prueba de userland.
 4. Guardar en el repo unas tools propias (ADT/payload/QEMU) en vez de adaptar las de ios-sweet al vuelo.
