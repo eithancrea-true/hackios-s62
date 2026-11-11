@@ -338,7 +338,7 @@ index a148608..4a36358 100644
  }
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 03defe6..48e9cd8 100644
+index 03defe6..ba8933e 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -1,9 +1,19 @@
@@ -560,7 +560,7 @@ index 03defe6..48e9cd8 100644
  			return true;
  		}
  		delay(1);
-@@ -118,521 +156,427 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
+@@ -118,521 +156,643 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
  	return false;
  }
  
@@ -659,11 +659,11 @@ index 03defe6..48e9cd8 100644
 -		st.dead = true;
 -		printf("SWEET TOUCH: abort failed status=%#x irq=%#x; stopping\n",
 -		    touch_rd(st.se, SE_STATUS), touch_rd(st.se, SE_IRQ));
--	}
+ 	}
 -	/* Bound drain even if the hardware reports an impossible FIFO count. */
 -	for (unsigned i = 0; i < 64 && (touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu); ++i) {
 -		(void)touch_rd(st.se, SE_RX);
- 	}
+-	}
 -	touch_wr(st.se, SE_IRQ_CLR, 0xffffffffu);
 -	if (touch_rd(st.se, SE_TX_COUNT) & 0xfffffffu) {
 -		st.dead = true;
@@ -846,11 +846,19 @@ index 03defe6..48e9cd8 100644
 -		touch_wr(st.se, SE_IRQ_CLR, irq & (SE_RX_WM_IRQ | SE_RX_LAST | SE_TX_WM_IRQ));
 -		delay(1);
 +		t_wr(t.qup, QUP_OPERATIONAL, QUP_IN_SVC | QUP_IN_DONE | QUP_OUT_SVC | QUP_OUT_DONE);
++	}
++	for (unsigned i = 0; t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ACTIVE; ++i) {
++		if (i > 1000) {
++			return qup_abort(ETIMEDOUT);
++		}
++		delay(2);
  	}
 -	touch_abort();
 -	return err;
--}
--
++	(void)qup_set_state(QUP_ST_RESET);
++	return 0;
+ }
+ 
 -static int
 -touch_msg(uint8_t addr, const uint8_t *tx, unsigned nt, uint8_t *rx,
 -    unsigned nr, bool stretch)
@@ -865,19 +873,20 @@ index 03defe6..48e9cd8 100644
 -		    touch_rd(st.se, SE_STATUS));
 -	}
 -	return err;
-+	for (unsigned i = 0; t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ACTIVE; ++i) {
-+		if (i > 1000) {
-+			return qup_abort(ETIMEDOUT);
-+		}
-+		delay(2);
-+	}
-+	(void)qup_set_state(QUP_ST_RESET);
-+	return 0;
- }
+-}
++/* ---- GPIO bit-bang I2C on the same pads (stock DT state "i2c_bitbang") ---- */
  
 -static int
 -touch_read(uint8_t addr, uint16_t reg, bool wide, uint8_t *buf, unsigned len)
--{
++static bool t_bb;               /* transport: bit-bang instead of the QUP */
++static unsigned t_bb_us = 5;    /* half bit time, ~100 kHz */
++#define BB_SDA 0x0000u          /* offsets from t.sda (gpio2); gpio3 is +0x1000 */
++#define BB_SCL 0x1000u
++
++/* Open drain: low = output 0, high = released input with pad pull-up. */
++static void
++bb_line(uint32_t pin, int high)
+ {
 -	uint8_t ptr[2] = {(uint8_t)(reg >> 8), (uint8_t)reg};
 -	int err = touch_msg(addr, wide ? ptr : ptr + 1, wide ? 2u : 1u,
 -	    NULL, 0, true);
@@ -886,26 +895,32 @@ index 03defe6..48e9cd8 100644
 -	}
 -	/* STOP_STRETCH on the pointer write retains the bus for a repeated START. */
 -	return touch_msg(addr, NULL, 0, buf, len, false);
--}
-+/* ---- Himax -------------------------------------------------------------- */
++	uint32_t cfg = t_rd(t.sda, pin) & ~((0xfu << 2) | (1u << 9) | 3u);
++	cfg |= 3u;
++	if (!high) {
++		cfg |= 1u << 9;
++	}
++	t_wr(t.sda, pin + 4u, 0);
++	t_wr(t.sda, pin, cfg);
+ }
  
  static int
 -touch_goodix_ack(void)
-+hx_wr32(uint8_t reg, uint32_t v)
++bb_get(uint32_t pin)
  {
 -	const uint8_t ack[3] = {GOODIX_EVENT_REG >> 8, GOODIX_EVENT_REG & 0xffu, 0};
 -	return touch_msg(0x5d, ack, sizeof(ack), NULL, 0, false);
-+	uint8_t b[5] = { reg, (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24) };
-+	return qup_xfer(b, 5, NULL, 0);
++	return (int)(t_rd(t.sda, pin + 4u) & 1u);
  }
  
 -/* Raw read only: 0x8240 is the vendor's generic/older VERSION candidate,
 - * not a second accepted GT9896 identity. Never try a four-byte Berlin pointer:
 - * on this 16-bit IC the extra bytes would be register data writes. */
-+/* AHB read of one 32-bit word (Linux himax_bus_read, length 4). */
- static int
+-static int
 -touch_probe_info(uint16_t reg, uint8_t *buf)
--{
++static bool
++bb_scl_high(void)
+ {
 -	memset(buf, 0xa5, 32);
 -	int err = touch_read(0x5d, reg, true, buf, 32);
 -	printf("SWEET TOUCH: probe info reg=%#x len=32 err=%d irq=%#x seen=%#x\n",
@@ -917,8 +932,13 @@ index 03defe6..48e9cd8 100644
 -				(void)snprintf(line + j * 3u, 4, "%02x ", buf[off + j]);
 -			}
 -			printf("SWEET TOUCH: probe raw %#x: %s\n", reg + off, line);
--		}
--	}
++	bb_line(BB_SCL, 1);
++	for (unsigned i = 0; i < 2000; ++i) {       /* clock stretching, 2 ms max */
++		if (bb_get(BB_SCL)) {
++			return true;
+ 		}
++		delay(1);
+ 	}
 -	return err;
 -}
 -
@@ -926,67 +946,90 @@ index 03defe6..48e9cd8 100644
 -touch_be16(const uint8_t *p)
 -{
 -	return ((unsigned)p[0] << 8) | p[1];
--}
--
--static bool
++	return false;
+ }
+ 
++/* (Repeated) START: SDA high, SCL high, SDA low, SCL low. */
+ static bool
 -touch_checksum(const uint8_t *buf, unsigned len)
-+hx_ahb_read(uint32_t addr, uint32_t *out)
++bb_start(void)
  {
 -	if (len < 2) {
--		return false;
-+	uint8_t reg = 0x08, b[4];
-+	int e;
-+	if ((e = hx_wr32(0x00, addr)) || (e = hx_wr32(0x0c, 0x00))) {
-+		return e;
++	bb_line(BB_SDA, 1);
++	delay(t_bb_us);
++	if (!bb_scl_high()) {
+ 		return false;
  	}
 -	unsigned sum = 0;
 -	for (unsigned i = 0; i + 2 < len; ++i) {
 -		sum += buf[i];
-+	if ((e = qup_xfer(&reg, 1, b, 4))) {
-+		return e;
++	delay(t_bb_us);
++	if (!bb_get(BB_SDA)) {
++		return false;
  	}
 -	return (sum & 0xffffu) == touch_be16(buf + len - 2);
-+	*out = (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
-+	return 0;
++	bb_line(BB_SDA, 0);
++	delay(t_bb_us);
++	bb_line(BB_SCL, 0);
++	delay(t_bb_us);
++	return true;
  }
  
  static void
 -touch_report(uint32_t mask, const int *x, const int *y)
-+t_report(uint32_t mask, const int *x, const int *y)
++bb_stop(void)
  {
 -	for (unsigned id = 0; id < TOUCH_MAX; ++id) {
-+	for (unsigned id = 0; id < T_MAX; ++id) {
- 		uint32_t bit = 1u << id;
- 		if (mask & bit) {
+-		uint32_t bit = 1u << id;
+-		if (mask & bit) {
 -			if (!(st.active & bit) || x[id] != st.x[id] || y[id] != st.y[id]) {
-+			if (!(t.active & bit) || x[id] != t.x[id] || y[id] != t.y[id]) {
- 				sweet_hid_touch((int)id, 1, x[id], y[id]);
- 			}
+-				sweet_hid_touch((int)id, 1, x[id], y[id]);
+-			}
 -			st.x[id] = x[id];
 -			st.y[id] = y[id];
 -		} else if (st.active & bit) {
 -			sweet_hid_touch((int)id, 0, st.x[id], st.y[id]);
-+			t.x[id] = x[id];
-+			t.y[id] = y[id];
-+		} else if (t.active & bit) {
-+			sweet_hid_touch((int)id, 0, t.x[id], t.y[id]);
++	bb_line(BB_SDA, 0);
++	delay(t_bb_us);
++	(void)bb_scl_high();
++	delay(t_bb_us);
++	bb_line(BB_SDA, 1);
++	delay(t_bb_us);
++}
++
++static int
++bb_wbyte(uint8_t b)
++{
++	for (int i = 7; i >= 0; --i) {
++		bb_line(BB_SDA, (b >> i) & 1);
++		delay(t_bb_us);
++		if (!bb_scl_high()) {
++			return ETIMEDOUT;
  		}
- 	}
+-	}
 -	st.active = mask;
-+	t.active = mask;
++		delay(t_bb_us);
++		bb_line(BB_SCL, 0);
++	}
++	bb_line(BB_SDA, 1);
++	delay(t_bb_us);
++	if (!bb_scl_high()) {
++		return ETIMEDOUT;
++	}
++	delay(t_bb_us);
++	int nack = bb_get(BB_SDA);
++	bb_line(BB_SCL, 0);
++	delay(t_bb_us);
++	return nack ? ENXIO : 0;
  }
  
-+static unsigned t_bad_sum, t_events;
-+
  static int
 -touch_goodix(void)
-+hx_event(void)
++bb_rbyte(uint8_t *out, bool ack)
  {
 -	uint8_t buf[90];
 -	int x[TOUCH_MAX] = {0}, y[TOUCH_MAX] = {0};
-+	uint8_t ev[T_EVENT_LEN], reg = 0x30;
-+	int x[T_MAX] = {0}, y[T_MAX] = {0};
- 	uint32_t mask = 0;
+-	uint32_t mask = 0;
 -	int err = touch_read(0x5d, GOODIX_EVENT_REG, true, buf, GOODIX_HEAD_LEN);
 -	if (err) {
 -		return err;
@@ -995,44 +1038,68 @@ index 03defe6..48e9cd8 100644
 -		/* Do not acknowledge firmware/config requests that we cannot service. */
 -		if (buf[0] & 0x40u) {
 -			return ENOTSUP;
-+	int e = qup_xfer(&reg, 1, ev, T_EVENT_LEN);
-+	if (e) {
-+		return e;
-+	}
-+	unsigned sum = 0, ed = 0;
-+	for (unsigned i = 0; i < T_EVENT_LEN; ++i) {
-+		sum += ev[i];
-+		ed += (ev[i] == 0xed || ev[i] == 0xee || ev[i] == 0xec);
-+	}
-+	if (ed == T_EVENT_LEN) {
-+		return EAGAIN;          /* ESD / exception pattern */
-+	}
-+	if (sum & 0xffu) {
-+		if ((t_bad_sum++ % 50u) == 0) {
-+			printf("S62 TOUCH: bad checksum %#x n=%#x first %02x%02x%02x%02x\n",
-+			    sum & 0xffu, ev[52], ev[0], ev[1], ev[2], ev[3]);
++	uint8_t v = 0;
++	bb_line(BB_SDA, 1);
++	for (int i = 0; i < 8; ++i) {
++		delay(t_bb_us);
++		if (!bb_scl_high()) {
++			return ETIMEDOUT;
  		}
 -		return 0; /* no new touch frame: retain current contacts */
-+		return EAGAIN;
++		delay(t_bb_us);
++		v = (uint8_t)((v << 1) | (bb_get(BB_SDA) & 1));
++		bb_line(BB_SCL, 0);
++	}
++	bb_line(BB_SDA, ack ? 0 : 1);
++	delay(t_bb_us);
++	if (!bb_scl_high()) {
++		return ETIMEDOUT;
++	}
++	delay(t_bb_us);
++	bb_line(BB_SCL, 0);
++	bb_line(BB_SDA, 1);
++	*out = v;
++	return 0;
++}
++
++static int
++bb_xfer(const uint8_t *w, unsigned wlen, uint8_t *r, unsigned rlen)
++{
++	int e;
++	if (!bb_start()) {
++		bb_stop();
++		return EIO;
  	}
 -	if (!touch_checksum(buf, GOODIX_HEAD_LEN)) {
 -		return EIO; /* header untrusted: no write to the IC */
--	}
++	if ((e = bb_wbyte((uint8_t)(T_ADDR << 1)))) {
++		goto done;
+ 	}
 -	unsigned n = buf[2] & 15u;
 -	if (n > TOUCH_MAX) {
 -		(void)touch_goodix_ack();
 -		return EIO;
--	}
++	for (unsigned i = 0; i < wlen; ++i) {
++		if ((e = bb_wbyte(w[i]))) {
++			goto done;
++		}
+ 	}
 -	if (n) {
 -		err = touch_read(0x5d, GOODIX_EVENT_REG + GOODIX_HEAD_LEN, true,
 -		    buf + GOODIX_HEAD_LEN, n * GOODIX_POINT_LEN + 2u);
 -		if (err) {
 -			return err;
--		}
++	if (rlen) {
++		if (!bb_start()) {
++			e = EIO;
++			goto done;
+ 		}
 -		if (!touch_checksum(buf + GOODIX_HEAD_LEN, n * GOODIX_POINT_LEN + 2u)) {
 -			(void)touch_goodix_ack();
 -			return EIO;
--		}
++		if ((e = bb_wbyte((uint8_t)((T_ADDR << 1) | 1u)))) {
++			goto done;
+ 		}
 -	}
 -	for (unsigned i = 0; i < n; ++i) {
 -		const uint8_t *p = buf + GOODIX_HEAD_LEN + i * GOODIX_POINT_LEN;
@@ -1043,7 +1110,11 @@ index 03defe6..48e9cd8 100644
 -		    (mask & (1u << id)) || px > 1079 || py > 2399) {
 -			(void)touch_goodix_ack();
 -			return EIO;
--		}
++		for (unsigned i = 0; i < rlen; ++i) {
++			if ((e = bb_rbyte(&r[i], i + 1u < rlen))) {
++				goto done;
++			}
+ 		}
 -		mask |= 1u << id;
 -		x[id] = (int)px;
 -		y[id] = (int)py;
@@ -1051,13 +1122,18 @@ index 03defe6..48e9cd8 100644
 -	err = touch_goodix_ack();
 -	if (!err) {
 -		touch_report(mask, x, y);
--	}
+ 	}
 -	return err;
--}
--
--static int
++	e = 0;
++done:
++	bb_stop();
++	return e;
+ }
+ 
+ static int
 -touch_focaltech(void)
--{
++t_xfer(const uint8_t *w, unsigned wlen, uint8_t *r, unsigned rlen)
+ {
 -	uint8_t buf[63];
 -	int x[TOUCH_MAX] = {0}, y[TOUCH_MAX] = {0};
 -	uint32_t mask = 0, seen = 0;
@@ -1074,21 +1150,113 @@ index 03defe6..48e9cd8 100644
 -		unsigned id = p[2] >> 4, event = p[0] >> 6;
 -		if (id >= TOUCH_MAX) {
 -			break; /* vendor's unused-record sentinel */
--		}
++	return t_bb ? bb_xfer(w, wlen, r, rlen) : qup_xfer(w, wlen, r, rlen);
++}
++
++/* Address-only probe (START, addr|W, STOP) of 0x08..0x77; "found" gets the ACKs. */
++static unsigned
++bb_scan(char *found, size_t len)
++{
++	unsigned nf = 0;
++	found[0] = 0;
++	for (unsigned a = 0x08; a < 0x78; ++a) {
++		int e = EIO;
++		if (bb_start()) {
++			e = bb_wbyte((uint8_t)(a << 1));
+ 		}
 -		if (seen & (1u << id)) {
 -			return EIO;
--		}
++		bb_stop();
++		if (e == 0 && nf < 8) {
++			snprintf(found + strlen(found), len - strlen(found), " %#x", a);
++			nf++;
++		} else if (e != 0 && e != ENXIO && a == 0x08) {
++			snprintf(found, len, " bus-stuck(e=%d sda=%d scl=%d)", e, bb_get(BB_SDA), bb_get(BB_SCL));
++			return 0;
+ 		}
 -		seen |= 1u << id;
 -		if (event == 1u) {
 -			continue; /* UP record */
--		}
++	}
++	return nf;
++}
++
++/* ---- Himax -------------------------------------------------------------- */
++
++static int
++hx_wr32(uint8_t reg, uint32_t v)
++{
++	uint8_t b[5] = { reg, (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24) };
++	return t_xfer(b, 5, NULL, 0);
++}
++
++/* AHB read of one 32-bit word (Linux himax_bus_read, length 4). */
++static int
++hx_ahb_read(uint32_t addr, uint32_t *out)
++{
++	uint8_t reg = 0x08, b[4];
++	int e;
++	if ((e = hx_wr32(0x00, addr)) || (e = hx_wr32(0x0c, 0x00))) {
++		return e;
++	}
++	if ((e = t_xfer(&reg, 1, b, 4))) {
++		return e;
++	}
++	*out = (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
++	return 0;
++}
++
++static void
++t_report(uint32_t mask, const int *x, const int *y)
++{
++	for (unsigned id = 0; id < T_MAX; ++id) {
++		uint32_t bit = 1u << id;
++		if (mask & bit) {
++			if (!(t.active & bit) || x[id] != t.x[id] || y[id] != t.y[id]) {
++				sweet_hid_touch((int)id, 1, x[id], y[id]);
++			}
++			t.x[id] = x[id];
++			t.y[id] = y[id];
++		} else if (t.active & bit) {
++			sweet_hid_touch((int)id, 0, t.x[id], t.y[id]);
+ 		}
 -		if (event == 3u) {
 -			return EIO;
--		}
++	}
++	t.active = mask;
++}
++
++static unsigned t_bad_sum, t_events;
++
++static int
++hx_event(void)
++{
++	uint8_t ev[T_EVENT_LEN], reg = 0x30;
++	int x[T_MAX] = {0}, y[T_MAX] = {0};
++	uint32_t mask = 0;
++	int e = t_xfer(&reg, 1, ev, T_EVENT_LEN);
++	if (e) {
++		return e;
++	}
++	unsigned sum = 0, ed = 0;
++	for (unsigned i = 0; i < T_EVENT_LEN; ++i) {
++		sum += ev[i];
++		ed += (ev[i] == 0xed || ev[i] == 0xee || ev[i] == 0xec);
++	}
++	if (ed == T_EVENT_LEN) {
++		return EAGAIN;          /* ESD / exception pattern */
++	}
++	if (sum & 0xffu) {
++		if ((t_bad_sum++ % 50u) == 0) {
++			printf("S62 TOUCH: bad checksum %#x n=%#x first %02x%02x%02x%02x\n",
++			    sum & 0xffu, ev[52], ev[0], ev[1], ev[2], ev[3]);
+ 		}
 -		unsigned px = ((unsigned)(p[0] & 15u) << 8) | p[1];
 -		unsigned py = ((unsigned)(p[2] & 15u) << 8) | p[3];
 -		if (px > 1079 || py > 2399) {
 -			return EIO;
++		return EAGAIN;
++	}
 +	if (ev[52] != 0xff && (ev[52] & 0x0fu)) {
 +		for (unsigned i = 0; i < T_MAX; ++i) {
 +			unsigned px = (unsigned)ev[4 * i] << 8 | ev[4 * i + 1];
@@ -1280,6 +1448,27 @@ index 03defe6..48e9cd8 100644
 +	    t_rd(t.sda, 0), t_rd(t.sda, 4), t_rd(t.sda, 0x1000), t_rd(t.sda, 0x1004),
 +	    rcfg, rio, t_rd(t.rst, 0), t_rd(t.rst, 4), t_rd(t.irq, 4), pull, force_reset);
 +
++	/*
++	 * Probe with the QUP out of the way: pads as plain GPIO inputs without
++	 * pulls tell whether the board's external pull-ups are powered; INT is
++	 * driven high by a running touch MCU (active low).
++	 */
++	t_wr(t.sda, 0x0000, t_rd(t.sda, 0x0000) & ~((0xfu << 2) | (1u << 9) | 3u));
++	t_wr(t.sda, 0x1000, t_rd(t.sda, 0x1000) & ~((0xfu << 2) | (1u << 9) | 3u));
++	t_wait(5);
++	int ext_sda = (int)(t_rd(t.sda, 4) & 1u), ext_scl = (int)(t_rd(t.sda, 0x1004) & 1u);
++	int irq_lvl = (int)(t_rd(t.irq, 4) & 1u);
++	t_wr(t.irq, 0, (t_rd(t.irq, 0) & ~3u) | 3u);        /* INT: pull-up */
++	char bbfound[64];
++	unsigned bbn = bb_scan(bbfound, sizeof(bbfound));
++	bool bb48 = strstr(bbfound, " 0x48") != NULL;
++	TLOG("no-pull levels sda=%d scl=%d int=%d; bit-bang scan:%s", ext_sda, ext_scl, irq_lvl,
++	    bbn ? bbfound : (bbfound[0] ? bbfound : " none"));
++	unsigned force_bb = 0;
++	(void)PE_parse_boot_argn("s62tbb", &force_bb, sizeof(force_bb));
++	t_wr(t.sda, 0x0000, (t_rd(t.sda, 0x0000) & ~0x3ffu) | pcfg);
++	t_wr(t.sda, 0x1000, (t_rd(t.sda, 0x1000) & ~0x3ffu) | pcfg);
++
 +	uint32_t hw = t_rd(t.qup, QUP_HW_VERSION);
 +	t_wr(t.qup, QUP_SW_RESET, 1);
 +	(void)qup_state_is(QUP_ST_RESET, 3u);
@@ -1326,6 +1515,9 @@ index 03defe6..48e9cd8 100644
 +	    hw, io, t.out_fifo, t.in_fifo, khz, t.clk_ctl);
 +
 +	uint32_t id = 0;
++	if (force_bb) {
++		t_bb = true;
++	}
 +	int e = hx_ahb_read(0x900000d0u, &id);
 +	TLOG("himax@0x48 id err=%d raw=%#x ic=%#x i2c=%#x qup=%#x",
 +	    e, id, id >> 8, t.last_i2c, t.last_err);
@@ -1335,6 +1527,13 @@ index 03defe6..48e9cd8 100644
 +		e = hx_ahb_read(0x900000d0u, &id);
 +		TLOG("id retry err=%d raw=%#x", e, id);
 +	}
++	if (e && bb48 && !t_bb) {
++		/* The chip answers bit-banged but not through the QUP: use bit-bang. */
++		t_bb = true;
++		e = hx_ahb_read(0x900000d0u, &id);
++		TLOG("QUP failed, bit-bang ACKs 0x48: switching; id err=%d raw=%#x ic=%#x", e, id, id >> 8);
++		e = 0;
++	}
 +	if (e) {
 +		/* Look for the controller at any other address (1-byte register-pointer write). */
 +		char found[64] = "";
@@ -1342,7 +1541,7 @@ index 03defe6..48e9cd8 100644
 +		for (unsigned a = 0x08; a < 0x78 && nf < 8; ++a) {
 +			uint8_t reg0 = 0;
 +			T_ADDR = a;
-+			int se = qup_xfer(&reg0, 1, NULL, 0);
++			int se = t_xfer(&reg0, 1, NULL, 0);
 +			if (se == 0) {
 +				snprintf(found + strlen(found), sizeof(found) - strlen(found), " %#x", a);
 +				nf++;
@@ -1413,7 +1612,7 @@ index 03defe6..48e9cd8 100644
  }
  
  void
-@@ -640,21 +584,20 @@ sweet_touch_init(void)
+@@ -640,21 +800,20 @@ sweet_touch_init(void)
  {
  	int enabled = 1;
  	thread_t thread;
