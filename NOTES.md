@@ -42,6 +42,15 @@
 - Run 42929118938 (9e40ed4): en QEMU (`-cpu cortex-a53`) arranca completo hasta
   "Waiting on IOMedia Apple_HFS". Timer/IRQ OK, sin instrucciones indefinidas.
 
+## Prueba en hardware
+- 2026-11-10, kernel 9e40ed4 en el S62 real (fastboot boot): llega a IOKit, framebuffer y
+  `SWEET CPU: cpu=0 entered initCPU`, y se congela ahí (sin pánico). Nunca llega
+  `came alive; SGI1 OK`: la auto-IPI (SGI1) y/o el timer no generan interrupción. Sospecha:
+  GIC del SDM660 (grupos/seguridad, GICR, ICC_*). Como el bucle usaba IOSleep, sin timer
+  se cuelga en silencio.
+- 7b602ec: sondeo sin IOSleep para la CPU 0 y volcado `S62 GIC:`/`S62 TMR:` tras 5 s
+  (espera 60 s antes del pánico). En QEMU imprime valores de referencia al funcionar.
+
 ## Hallazgo útil
 - PAGE_RATIO 4: el userland ve páginas de 16K aunque el hardware sea 4K (como los SoC 4K de
   Apple con más de 1GB). Reduce el riesgo de "iOS 16 sobre 4K"; el de LSE/ARMv8.0 sigue.
