@@ -2251,7 +2251,7 @@ index 6b926fe..b4befdb 100644
  	*dev = su.bdev;
  	return 0;
 diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
-index 2545cf9..8bf3301 100644
+index 2545cf9..09e5feb 100644
 --- a/iokit/Kernel/arm/SweetCPU.cpp
 +++ b/iokit/Kernel/arm/SweetCPU.cpp
 @@ -20,6 +20,8 @@
@@ -2263,7 +2263,26 @@ index 2545cf9..8bf3301 100644
  
  class SweetCPU;
  static SweetCPU *sweet_cpus[MAX_CPUS];
-@@ -161,12 +163,39 @@ SweetCPU::startAll(void *arg __unused, wait_result_t result __unused)
+@@ -74,7 +76,8 @@ SweetCPU::start(IOService *provider)
+ 		return false;
+ 	}
+ 	/* MPIDR Aff1 = core: 0x000-0x500 A55, 0x600/0x700 A76 */
+-	if (cpu->phys_id > 0x700 || (cpu->phys_id & 0xff) != 0 ||
++	/* S62 (SDM660, Kryo 260): Aff1 = cluster 0/1, Aff0 = core 0..3. */
++	if ((cpu->phys_id >> 8) > 1 || (cpu->phys_id & 0xff) > 3 ||
+ 	    topology->num_cpus > SWEET_SMP_MAX_CPUS) {
+ 		panic("SWEET CPU: invalid topology cpu=%u mpidr=0x%x count=%u",
+ 		    cpu->cpu_id, cpu->phys_id, topology->num_cpus);
+@@ -82,7 +85,7 @@ SweetCPU::start(IOService *provider)
+ 	if (!IOCPU::start(provider)) {
+ 		return false;
+ 	}
+-	cpuName = OSSymbol::withCStringNoCopy("Kryo 470");
++	cpuName = OSSymbol::withCStringNoCopy("Kryo 260");
+ 	if (cpuName == NULL) {
+ 		return false;
+ 	}
+@@ -161,12 +164,39 @@ SweetCPU::startAll(void *arg __unused, wait_result_t result __unused)
  			if (mach_absolute_time() > deadline) {
  				IOLog("SWEET CPU: cpu=%u mpidr=0x%x NOT alive after 5s\n",
  				    i, topology->cpus[i].phys_id);
@@ -2663,7 +2682,7 @@ index a645750..bab405b 100644
  				c_overage_swapped_limit = (uint32_t)size / c_seg_bufsize;
  
 diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
-index 6089db9..b35b78b 100644
+index 6089db9..6ec26cf 100644
 --- a/pexpert/arm/pe_fiq.c
 +++ b/pexpert/arm/pe_fiq.c
 @@ -26,6 +26,12 @@ static vm_offset_t gicd_base;
@@ -2703,7 +2722,34 @@ index 6089db9..b35b78b 100644
  #else
  	// Configure timers and legacy FIQ to be group 0
  	gicr_write32(GICR_IGROUPR0, 0x81FFFFFF);
-@@ -222,6 +238,85 @@ pe_init_fiq()
+@@ -213,6 +229,26 @@ pe_init_fiq()
+ 	}
+ 	__builtin_arm_wsr64("ICC_IGRPEN1_EL1", 1);
+ 	__builtin_arm_isb(ISB_SY);
++	/*
++	 * S62: the SGI/PPI configuration written above does not stick on this
++	 * GIC-500 until the distributor / CPU interface are enabled (seen on the
++	 * boot CPU: ISENABLER0 read back 0). Write it again here, on every CPU,
++	 * and verify the read-back.
++	 */
++	{
++		uint32_t want = (1U << sweet_vtimer_intid) | (1U << SWEET_IPI_SGI);
++		for (unsigned int tries = 0; tries < 1000; tries++) {
++			gicr_write32(GICR_IGROUPR0, 0xFFFFFFFF);
++			for (unsigned int i = 0; i < 32; i += 4) {
++				gicr_write32(GICR_IPRIORITYR0 + i, 0xA0A0A0A0);
++			}
++			gicr_write32(GICR_ISENABLER0, want);
++			__builtin_arm_dsb(DSB_SY);
++			if ((gicr_read32(GICR_ISENABLER0) & want) == want) {
++				break;
++			}
++		}
++	}
+ #else
+ 	// Enable the forwarding of the vtimer interrupt
+ 	uint32_t gicd_ctlr = gicd_read32(GICD_CTLR);
+@@ -222,6 +258,85 @@ pe_init_fiq()
  	__builtin_arm_isb(ISB_SY);
  #endif /* SWEET */
  }
