@@ -36,7 +36,19 @@
 - Run 42924895413 (macos-15, Xcode 16.0): los 81 parches + 9000 aplican; un único error de
   compilación en todo el kernel (`casa` en commpage_asm.s). Corregido con LL/SC.
 
+- Run 42926264012: compila. QEMU: assert en sweet_early_map_final (alias del FB en un L1 sin tabla).
+- Run 42927711389: pánico `write_pte_fast: PTE write is unaligned` en pmap_create_commpages:
+  con >1GB el kernel usa páginas VM de 16K sobre 4K de hardware (PAGE_RATIO 4).
+- Run 42929118938 (9e40ed4): en QEMU (`-cpu cortex-a53`) arranca completo hasta
+  "Waiting on IOMedia Apple_HFS". Timer/IRQ OK, sin instrucciones indefinidas.
+
+## Hallazgo útil
+- PAGE_RATIO 4: el userland ve páginas de 16K aunque el hardware sea 4K (como los SoC 4K de
+  Apple con más de 1GB). Reduce el riesgo de "iOS 16 sobre 4K"; el de LSE/ARMv8.0 sigue.
+
 ## Siguiente
-1. Que la compilación CI termine (ver rama `ci-out`: RUN.txt, patches.txt, errors.txt).
-2. Arrancar el kernel en QEMU (`-cpu cortex-a53`, 4K) antes de probar en el teléfono.
-3. ADT S62 + payload + `fastboot boot` (temporal, sin flashear).
+1. Probar en el teléfono: imagen local `s62-shim/xnu8796/s62-boot-xnu8796.img` (fastboot boot,
+   temporal). Boot-args: cpus=1 sweetkeys=0 sweettouch=0 sweetusb=0 wdt=-1. PENDIENTE resultado.
+2. Driver eMMC (SDHCI sdhc_1 @0xc0c4000) para montar root.
+3. Imagen de sistema iOS en userdata (borra Android; confirmar antes) y prueba de userland.
+4. Guardar en el repo unas tools propias (ADT/payload/QEMU) en vez de adaptar las de ios-sweet al vuelo.
