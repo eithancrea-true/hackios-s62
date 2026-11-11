@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_keys.c b/bsd/dev/sweet_keys.c
-index a148608..00fe650 100644
+index a148608..4c11e3b 100644
 --- a/bsd/dev/sweet_keys.c
 +++ b/bsd/dev/sweet_keys.c
 @@ -1,8 +1,22 @@
@@ -27,8 +27,11 @@ index a148608..00fe650 100644
   */
  #if defined(ARM64_BOARD_CONFIG_SWEET)
  #include <sys/param.h>
-@@ -17,18 +31,33 @@ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+@@ -15,20 +29,36 @@
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
  extern void sweet_hid_key(int key, int down);
++extern void s62_touch_replay(void);
  void sweet_keys_init(void);
  
 -#define KEYS_CORE_PA     0x0c440000u
@@ -68,7 +71,7 @@ index a148608..00fe650 100644
  
  static uint32_t
  keys_rd(vm_offset_t base, uint32_t off)
-@@ -38,42 +67,45 @@ keys_rd(vm_offset_t base, uint32_t off)
+@@ -38,42 +68,45 @@ keys_rd(vm_offset_t base, uint32_t off)
  	return v;
  }
  
@@ -132,7 +135,7 @@ index a148608..00fe650 100644
  			return true;
  		}
  		delay(1);
-@@ -81,6 +113,93 @@ keys_read(uint16_t apid, uint16_t addr, uint8_t *out)
+@@ -81,6 +114,115 @@ keys_read(uint16_t apid, uint16_t addr, uint8_t *out)
  	return false;
  }
  
@@ -169,6 +172,28 @@ index a148608..00fe650 100644
 +	s62_spmi_cache[i].obs = keys_obs_map(s62_spmi_cache[i].apid);
 +	s62_spmi_cache[i].chn = 0;
 +	return (int)i;
++}
++
++/* Owner EE of the peripheral (cnfg + 0x700 + 4 * apid, bits 0..2); -1 unknown. */
++int s62_spmi_owner(unsigned sid, unsigned addr);
++int
++s62_spmi_owner(unsigned sid, unsigned addr)
++{
++	static vm_offset_t cnfg;
++	int i = s62_spmi_slot(sid, addr);
++	if (i < 0 || s62_spmi_cache[i].apid == KEYS_NO_APID) {
++		return -1;
++	}
++	if (!cnfg) {
++		cnfg = ml_io_map(0x0800a000u, 0x1000);
++		if (!cnfg) {
++			return -1;
++		}
++	}
++	if (0x700u + 4u * s62_spmi_cache[i].apid >= 0x1000u) {
++		return -1;
++	}
++	return (int)(keys_rd(cnfg, 0x700u + 4u * s62_spmi_cache[i].apid) & 7u);
 +}
 +
 +bool
@@ -226,14 +251,15 @@ index a148608..00fe650 100644
  static void
  keys_wait(void)
  {
-@@ -93,35 +212,99 @@ keys_wait(void)
+@@ -93,35 +235,102 @@ keys_wait(void)
  static void
  keys_thread(void *arg, wait_result_t result)
  {
 -	int state[3] = {0, 0, 0};
+-	unsigned errors = 0;
 +	int state[KEYS_NKEYS] = { 0, 0, 0, 0 };
 +	int last_pon = -1;
- 	unsigned errors = 0;
++	unsigned errors = 0, rounds = 0;
  	(void)arg;
  	(void)result;
  	for (;;) {
@@ -305,6 +331,9 @@ index a148608..00fe650 100644
 +				sweet_hid_key(k, now);
  			}
  		}
++		if ((++rounds % 250u) == 0) {
++			s62_touch_replay();      /* touch diagnostics stay visible even if its thread is stuck */
++		}
  		keys_wait();
  	}
  }
@@ -340,7 +369,7 @@ index a148608..00fe650 100644
  void
  sweet_keys_init(void)
  {
-@@ -133,50 +316,41 @@ sweet_keys_init(void)
+@@ -133,50 +342,41 @@ sweet_keys_init(void)
  	keys_started = true;
  	(void)PE_parse_boot_argn("sweetkeys", &enabled, sizeof(enabled));
  	if (!enabled) {
@@ -415,7 +444,7 @@ index a148608..00fe650 100644
  }
  #endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 03defe6..ed62bcf 100644
+index 03defe6..3313646 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -1,9 +1,19 @@
@@ -443,7 +472,7 @@ index 03defe6..ed62bcf 100644
   */
  #if defined(ARM64_BOARD_CONFIG_SWEET)
  #include <sys/param.h>
-@@ -17,72 +27,99 @@
+@@ -17,72 +27,110 @@
  
  extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
  /* Mach MIG declaration is not included by BSD's exported thread.h. */
@@ -452,6 +481,8 @@ index 03defe6..ed62bcf 100644
  extern void sweet_hid_touch(int finger, int down, int x, int y);
 +extern bool s62_spmi_read(unsigned sid, unsigned addr, uint8_t *out);
 +extern int s62_spmi_write(unsigned sid, unsigned addr, uint8_t val);
++extern int s62_spmi_owner(unsigned sid, unsigned addr);
++void s62_touch_replay(void);
  void sweet_touch_init(void);
  
 -#define TOUCH_SE_PA      0x00a84000u
@@ -588,9 +619,18 @@ index 03defe6..ed62bcf 100644
 +	printf("S62 TOUCH: %s\n", slot_); \
 +} while (0)
 +
-+static void
-+t_replay(void)
++static unsigned t_quiet;
++static char t_live[150];
++
++void
++s62_touch_replay(void)
 +{
++	if (t_quiet) {
++		return;
++	}
++	if (t_live[0]) {
++		printf("S62 TOUCH[live]: %s\n", t_live);
++	}
 +	for (unsigned i = 0; i < t_nst; ++i) {
 +		printf("S62 TOUCH[%u]: %s\n", i, t_st[i]);
 +	}
@@ -602,7 +642,7 @@ index 03defe6..ed62bcf 100644
  {
  	uint32_t v = *(volatile uint32_t *)(base + off);
  	__asm__ volatile("dmb oshld" ::: "memory");
-@@ -90,7 +127,7 @@ touch_rd(vm_offset_t base, uint32_t off)
+@@ -90,7 +138,7 @@ touch_rd(vm_offset_t base, uint32_t off)
  }
  
  static void
@@ -611,7 +651,7 @@ index 03defe6..ed62bcf 100644
  {
  	__asm__ volatile("dmb oshst" ::: "memory");
  	*(volatile uint32_t *)(base + off) = val;
-@@ -98,19 +135,22 @@ touch_wr(vm_offset_t base, uint32_t off, uint32_t val)
+@@ -98,19 +146,22 @@ touch_wr(vm_offset_t base, uint32_t off, uint32_t val)
  }
  
  static void
@@ -639,7 +679,7 @@ index 03defe6..ed62bcf 100644
  			return true;
  		}
  		delay(1);
-@@ -118,521 +158,729 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
+@@ -118,521 +169,732 @@ touch_wait_clear(vm_offset_t base, uint32_t off, uint32_t mask)
  	return false;
  }
  
@@ -693,13 +733,7 @@ index 03defe6..ed62bcf 100644
 -			printf("SWEET TOUCH: RCG update timeout\n");
 -			return false;
 -		}
-+	uint32_t i2c = t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ERRS;
-+	uint32_t err = t_rd(t.qup, QUP_ERROR_FLAGS) & QUP_ERRS;
-+	if (i2c || err) {
-+		t.last_i2c = i2c;
-+		t.last_err = err;
-+		return (i2c & QUP_I2C_NACK) ? ENXIO : EIO;
- 	}
+-	}
 -	const uint32_t branches[] = {0x18004, 0x18008, 0x1800c, 0x18010, 0x18144};
 -	for (unsigned i = 0; i < sizeof(branches) / sizeof(branches[0]); ++i) {
 -		if (!touch_wait_clear(st.gcc, branches[i], 1u << 31)) {
@@ -707,7 +741,13 @@ index 03defe6..ed62bcf 100644
 -			    touch_rd(st.gcc, branches[i]));
 -			return false;
 -		}
--	}
++	uint32_t i2c = t_rd(t.qup, QUP_I2C_STATUS) & QUP_I2C_ERRS;
++	uint32_t err = t_rd(t.qup, QUP_ERROR_FLAGS) & QUP_ERRS;
++	if (i2c || err) {
++		t.last_i2c = i2c;
++		t.last_err = err;
++		return (i2c & QUP_I2C_NACK) ? ENXIO : EIO;
+ 	}
 -	return true;
 +	return 0;
  }
@@ -931,7 +971,9 @@ index 03defe6..ed62bcf 100644
 +			return qup_abort(ETIMEDOUT);
 +		}
 +		delay(2);
-+	}
+ 	}
+-	touch_abort();
+-	return err;
 +	(void)qup_set_state(QUP_ST_RESET);
 +	return 0;
 +}
@@ -951,9 +993,7 @@ index 03defe6..ed62bcf 100644
 +	cfg |= 3u;
 +	if (!high) {
 +		cfg |= 1u << 9;
- 	}
--	touch_abort();
--	return err;
++	}
 +	t_wr(t.sda, pin + 4u, 0);
 +	t_wr(t.sda, pin, cfg);
  }
@@ -962,7 +1002,17 @@ index 03defe6..ed62bcf 100644
 -touch_msg(uint8_t addr, const uint8_t *tx, unsigned nt, uint8_t *rx,
 -    unsigned nr, bool stretch)
 +bb_get(uint32_t pin)
-+{
+ {
+-	st.irq_status = st.irq_last = 0;
+-	st.sent = st.got = 0;
+-	int err = touch_msg_run(addr, tx, nt, rx, nr, stretch);
+-	if (st.probing) {
+-		printf("SWEET TOUCH: probe xfer addr=%#x %s len=%u stretch=%u err=%d irq=%#x seen=%#x tx=%u rx=%u status=%#x\n",
+-		    addr, nr ? "read" : "write", nr ? nr : nt, stretch ? 1u : 0u,
+-		    err, st.irq_last, st.irq_status, st.sent, st.got,
+-		    touch_rd(st.se, SE_STATUS));
+-	}
+-	return err;
 +	return (int)(t_rd(t.sda, pin + 4u) & 1u);
 +}
 +
@@ -1001,17 +1051,7 @@ index 03defe6..ed62bcf 100644
 +
 +static void
 +bb_stop(void)
- {
--	st.irq_status = st.irq_last = 0;
--	st.sent = st.got = 0;
--	int err = touch_msg_run(addr, tx, nt, rx, nr, stretch);
--	if (st.probing) {
--		printf("SWEET TOUCH: probe xfer addr=%#x %s len=%u stretch=%u err=%d irq=%#x seen=%#x tx=%u rx=%u status=%#x\n",
--		    addr, nr ? "read" : "write", nr ? nr : nt, stretch ? 1u : 0u,
--		    err, st.irq_last, st.irq_status, st.sent, st.got,
--		    touch_rd(st.se, SE_STATUS));
--	}
--	return err;
++{
 +	bb_line(BB_SDA, 0);
 +	delay(t_bb_us);
 +	(void)bb_scl_high();
@@ -1131,14 +1171,14 @@ index 03defe6..ed62bcf 100644
 +done:
 +	bb_stop();
 +	return e;
-+}
-+
+ }
+ 
 +static int
 +t_xfer(const uint8_t *w, unsigned wlen, uint8_t *r, unsigned rlen)
 +{
 +	return t_bb ? bb_xfer(w, wlen, r, rlen) : qup_xfer(w, wlen, r, rlen);
- }
- 
++}
++
 +/* Address-only probe (START, addr|W, STOP) of 0x08..0x77; "found" gets the ACKs. */
  static unsigned
 -touch_be16(const uint8_t *p)
@@ -1519,6 +1559,7 @@ index 03defe6..ed62bcf 100644
 -		printf("SWEET TOUCH: MMIO mapping failed\n");
 +	(void)PE_parse_boot_argn("s62ti2c", &khz, sizeof(khz));
 +	(void)PE_parse_boot_argn("s62tquiet", &quiet, sizeof(quiet));
++	t_quiet = quiet;
 +	(void)PE_parse_boot_argn("s62treset", &force_reset, sizeof(force_reset));
 +	printf("S62 TOUCH: starting in %u s\n", delay_s);
 +	t_wait(delay_s * 1000u);
@@ -1535,6 +1576,7 @@ index 03defe6..ed62bcf 100644
  		goto out;
  	}
 -	if (!touch_clocks() || !touch_se_init()) {
+-		goto out;
 +	TLOG("TLMM sda=%#x/%#x scl=%#x/%#x irq=%#x/%#x rst=%#x/%#x",
 +	    t_rd(t.sda, 0), t_rd(t.sda, 4), t_rd(t.sda, 0x1000), t_rd(t.sda, 0x1004),
 +	    t_rd(t.irq, 0), t_rd(t.irq, 4), t_rd(t.rst, 0), t_rd(t.rst, 4));
@@ -1552,16 +1594,19 @@ index 03defe6..ed62bcf 100644
 +	unsigned xldo = 0;
 +	(void)PE_parse_boot_argn("s62tldo", &xldo, sizeof(xldo));
 +	if (xldo) {
-+		unsigned sid = (xldo >> 8) & 0xfu, per = xldo & 0xffu;
-+		int wr = s62_spmi_write(sid, (per << 8) | 0x46u, 0x80);
++		unsigned sid = (xldo >> 8) & 0xfu, per = xldo & 0xffu, force = 0;
++		(void)PE_parse_boot_argn("s62tldoforce", &force, sizeof(force));
++		int owner = s62_spmi_owner(sid, per << 8);
 +		uint8_t st = 0, en = 0;
-+		t_wait(20);
-+		(void)s62_spmi_read(sid, (per << 8) | 0x08u, &st);
-+		(void)s62_spmi_read(sid, (per << 8) | 0x46u, &en);
-+		TLOG("LDO enable sid=%u periph=%#x write=%d -> status=%#x en=%#x", sid, per, wr, st, en);
-+	}
-+	if (!t_clocks()) {
- 		goto out;
++		TLOG("LDO sid=%u periph=%#x owner EE=%d (we are 0)%s", sid, per, owner,
++		    (owner == 0 || force) ? ": writing enable" : ": not ours, write skipped");
++		if (owner == 0 || force) {
++			int wr = s62_spmi_write(sid, (per << 8) | 0x46u, 0x80);
++			t_wait(20);
++			(void)s62_spmi_read(sid, (per << 8) | 0x08u, &st);
++			(void)s62_spmi_read(sid, (per << 8) | 0x46u, &en);
++			TLOG("LDO write=%d -> status=%#x en=%#x", wr, st, en);
++		}
  	}
 -	printf("SWEET TOUCH: TLMM reset=%#x irq=%#x vdd90=%#x; voting L11C through RPMh\n",
 -	    touch_rd(st.gpio, TOUCH_GPIO_IO(8)), touch_rd(st.gpio, TOUCH_GPIO_IO(9)),
@@ -1572,7 +1617,34 @@ index 03defe6..ed62bcf 100644
 -	int power_error = sweet_rpmh_vreg_enable("ldoc11", 3200);
 -	if (power_error) {
 -		printf("SWEET TOUCH: L11C RPMh enable failed %d; probes skipped\n", power_error);
--		goto out;
++	if (!t_clocks()) {
+ 		goto out;
+ 	}
+-	touch_gpio(90, 0, 0, 0, true, true); /* board digital power enable */
+-	touch_wait(10); /* conservative rail settling; not a DT timing value */
+-	touch_gpio(6, 1, 0, 0, false, false); /* qup11 SDA/SCL, 2 mA */
+-	touch_gpio(7, 1, 0, 0, false, false);
+-	/* Vendor GT9896 dev_confirm: reset low 2 ms, then high. */
+-	touch_gpio(8, 0, 3, 3, true, false);
+-	touch_wait(2);
+-	touch_gpio(8, 0, 3, 3, true, true);
+-	touch_wait(300); /* exceeds vendor 5 ms test + 95 ms post-test wait */
+-	uint8_t gid[32], legacy[32], fid1 = 0, fid2 = 0;
+-	st.probing = true;
+-	int ge = touch_probe_info(GOODIX_PID_REG, gid);
+-	printf("SWEET TOUCH: probe 0x5d err=%d pid=%02x%02x%02x%02x fw=%02x.%02x.%02x.%02x irq=%#x\n",
+-	    ge, gid[0], gid[1], gid[2], gid[3], gid[8], gid[9], gid[10], gid[11], st.irq_status);
+-	(void)touch_probe_info(0x8240, legacy);
+-	int fe1 = touch_read(0x38, 0xa3, false, &fid1, 1);
+-	int fe2 = touch_read(0x38, 0x9f, false, &fid2, 1);
+-	printf("SWEET TOUCH: probe 0x38 err=%d/%d chip-id=%02x:%02x irq=%#x\n",
+-	    fe1, fe2, fid1, fid2, st.irq_status);
+-	st.probing = false;
+-	bool goodix = !ge && gid[0] == '9' && gid[1] == '8' && gid[2] == '9' && gid[3] == '6';
+-	bool fts = !fe1 && !fe2 && fid1 == 0x54 && fid2 == 0x52;
+-	if (st.dead || goodix == fts) {
+-		printf("SWEET TOUCH: no unique supported IC (goodix=%d fts=%d dead=%d); stopping\n",
+-		    goodix, fts, st.dead);
 +	/*
 +	 * SDA/SCL: function 3 (blsp_i2c1), 2 mA. ABL leaves both lines low with
 +	 * no pull (seen on hardware), so use the pad pull-ups (stock DT does the
@@ -1642,32 +1714,7 @@ index 03defe6..ed62bcf 100644
 +	} else {
 +		uint32_t fs = (ratio - 6u) * 2u / 3u;
 +		t.clk_ctl = ((fs / 2u) << 16) | (3u << 8) | (fs & 0xffu);
- 	}
--	touch_gpio(90, 0, 0, 0, true, true); /* board digital power enable */
--	touch_wait(10); /* conservative rail settling; not a DT timing value */
--	touch_gpio(6, 1, 0, 0, false, false); /* qup11 SDA/SCL, 2 mA */
--	touch_gpio(7, 1, 0, 0, false, false);
--	/* Vendor GT9896 dev_confirm: reset low 2 ms, then high. */
--	touch_gpio(8, 0, 3, 3, true, false);
--	touch_wait(2);
--	touch_gpio(8, 0, 3, 3, true, true);
--	touch_wait(300); /* exceeds vendor 5 ms test + 95 ms post-test wait */
--	uint8_t gid[32], legacy[32], fid1 = 0, fid2 = 0;
--	st.probing = true;
--	int ge = touch_probe_info(GOODIX_PID_REG, gid);
--	printf("SWEET TOUCH: probe 0x5d err=%d pid=%02x%02x%02x%02x fw=%02x.%02x.%02x.%02x irq=%#x\n",
--	    ge, gid[0], gid[1], gid[2], gid[3], gid[8], gid[9], gid[10], gid[11], st.irq_status);
--	(void)touch_probe_info(0x8240, legacy);
--	int fe1 = touch_read(0x38, 0xa3, false, &fid1, 1);
--	int fe2 = touch_read(0x38, 0x9f, false, &fid2, 1);
--	printf("SWEET TOUCH: probe 0x38 err=%d/%d chip-id=%02x:%02x irq=%#x\n",
--	    fe1, fe2, fid1, fid2, st.irq_status);
--	st.probing = false;
--	bool goodix = !ge && gid[0] == '9' && gid[1] == '8' && gid[2] == '9' && gid[3] == '6';
--	bool fts = !fe1 && !fe2 && fid1 == 0x54 && fid2 == 0x52;
--	if (st.dead || goodix == fts) {
--		printf("SWEET TOUCH: no unique supported IC (goodix=%d fts=%d dead=%d); stopping\n",
--		    goodix, fts, st.dead);
++	}
 +	TLOG("QUP hw=%#x io=%#x fifo out=%u in=%u, %u kHz clk_ctl=%#x",
 +	    hw, io, t.out_fifo, t.in_fifo, khz, t.clk_ctl);
 +
@@ -1749,10 +1796,9 @@ index 03defe6..ed62bcf 100644
  			}
  		}
 -		touch_wait(10);
-+		if ((++loops % 500u) == 0 && !quiet) {
-+			t_replay();
-+			printf("S62 TOUCH[live]: irq=%d reads-ok=%u errs=%u badsum=%u active=%#x last i2c=%#x qup=%#x\n",
-+			    (int)(t_rd(t.irq, 4) & 1u), ok, nerr, t_bad_sum, t.active, t.last_i2c, t.last_err);
++		if ((++loops % 100u) == 0) {
++			snprintf(t_live, sizeof(t_live), "irq=%d reads-ok=%u errs=%u badsum=%u active=%#x last i2c=%#x qup=%#x bb=%d",
++			    (int)(t_rd(t.irq, 4) & 1u), ok, nerr, t_bad_sum, t.active, t.last_i2c, t.last_err, t_bb);
 +		}
 +		t_wait(10);
  	}
@@ -1761,15 +1807,12 @@ index 03defe6..ed62bcf 100644
 -	(void)thread_terminate(current_thread());
 -	thread_block(THREAD_CONTINUE_NULL);
 +	for (;;) {
-+		if (!quiet) {
-+			t_replay();
-+		}
 +		t_wait(5000);
 +	}
  }
  
  void
-@@ -640,21 +888,20 @@ sweet_touch_init(void)
+@@ -640,21 +902,20 @@ sweet_touch_init(void)
  {
  	int enabled = 1;
  	thread_t thread;
