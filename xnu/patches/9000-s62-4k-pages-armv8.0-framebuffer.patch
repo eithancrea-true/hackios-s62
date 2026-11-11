@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_keys.c b/bsd/dev/sweet_keys.c
-index a148608..4c11e3b 100644
+index a148608..8c23e6f 100644
 --- a/bsd/dev/sweet_keys.c
 +++ b/bsd/dev/sweet_keys.c
 @@ -1,8 +1,22 @@
@@ -48,9 +48,7 @@ index a148608..4c11e3b 100644
 +#define KEYS_PON_RT      0x0810u
 +#define KEYS_NKEYS       4
 +#define KEYS_NGPIO       25      /* PM660 1..13, PM660L 1..12 */
- 
--static vm_offset_t keys_core, keys_obs, keys_cnfg;
--static uint16_t keys_pon_apid = KEYS_NO_APID, keys_gpio_apid = KEYS_NO_APID;
++
 +struct keys_gpio {
 +	uint16_t ppid;           /* sid << 8 | periph */
 +	uint16_t apid;
@@ -58,7 +56,9 @@ index a148608..4c11e3b 100644
 +	vm_offset_t obs;
 +	int last;                /* -1 unknown, else RT bit 0 */
 +};
-+
+ 
+-static vm_offset_t keys_core, keys_obs, keys_cnfg;
+-static uint16_t keys_pon_apid = KEYS_NO_APID, keys_gpio_apid = KEYS_NO_APID;
 +static vm_offset_t keys_core;
 +static vm_offset_t keys_pon_obs;
  static uint32_t keys_version, keys_last_status;
@@ -135,7 +135,7 @@ index a148608..4c11e3b 100644
  			return true;
  		}
  		delay(1);
-@@ -81,6 +114,115 @@ keys_read(uint16_t apid, uint16_t addr, uint8_t *out)
+@@ -81,6 +114,157 @@ keys_read(uint16_t apid, uint16_t addr, uint8_t *out)
  	return false;
  }
  
@@ -237,6 +237,48 @@ index a148608..4c11e3b 100644
 +	return -1;
 +}
 +
++/*
++ * Rough per-cluster CPU speed: iterations per second of a 4-instruction loop
++ * with the thread bound to cpu 0 (silver) and cpu 4 (gold). Tells whether the
++ * bootloader left the cores at a low clock (nothing here changes it).
++ */
++struct processor;
++extern struct processor *cpu_to_processor(int cpu);
++extern struct processor *thread_bind(struct processor *processor);
++static char keys_cpu_line[120];
++
++static uint64_t
++keys_bench_cpu(int cpu)
++{
++	struct processor *proc = cpu_to_processor(cpu);
++	uint64_t span, t0, n = 0;
++	if (proc == NULL) {
++		return 0;
++	}
++	(void)thread_bind(proc);
++	thread_block(THREAD_CONTINUE_NULL);
++	clock_interval_to_absolutetime_interval(50, NSEC_PER_MSEC, &span);
++	t0 = mach_absolute_time();
++	do {
++		for (unsigned i = 0; i < 100000; ++i) {
++			__asm__ volatile ("" : "+r" (n));
++			n++;
++		}
++	} while (mach_absolute_time() - t0 < span);
++	(void)thread_bind(NULL);
++	thread_block(THREAD_CONTINUE_NULL);
++	return n * 20u;
++}
++
++static void
++keys_bench(void)
++{
++	uint64_t a = keys_bench_cpu(0), b = keys_bench_cpu(4);
++	snprintf(keys_cpu_line, sizeof(keys_cpu_line), "S62 CPU: loop speed cpu0=%llu M/s cpu4=%llu M/s",
++	    a / 1000000u, b / 1000000u);
++	printf("%s\n", keys_cpu_line);
++}
++
 +static struct keys_gpio *
 +keys_gpio_for(uint32_t code)
 +{
@@ -251,7 +293,7 @@ index a148608..4c11e3b 100644
  static void
  keys_wait(void)
  {
-@@ -93,35 +235,102 @@ keys_wait(void)
+@@ -93,35 +277,108 @@ keys_wait(void)
  static void
  keys_thread(void *arg, wait_result_t result)
  {
@@ -331,7 +373,13 @@ index a148608..4c11e3b 100644
 +				sweet_hid_key(k, now);
  			}
  		}
++		if (rounds == 500u || rounds == 3000u) {
++			keys_bench();           /* 10 s and 60 s after start */
++		}
 +		if ((++rounds % 250u) == 0) {
++			if (keys_cpu_line[0]) {
++				printf("%s\n", keys_cpu_line);
++			}
 +			s62_touch_replay();      /* touch diagnostics stay visible even if its thread is stuck */
 +		}
  		keys_wait();
@@ -369,7 +417,7 @@ index a148608..4c11e3b 100644
  void
  sweet_keys_init(void)
  {
-@@ -133,50 +342,41 @@ sweet_keys_init(void)
+@@ -133,50 +390,41 @@ sweet_keys_init(void)
  	keys_started = true;
  	(void)PE_parse_boot_argn("sweetkeys", &enabled, sizeof(enabled));
  	if (!enabled) {
@@ -2868,6 +2916,44 @@ index 6b926fe..b4befdb 100644
  	}
  	*dev = su.bdev;
  	return 0;
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+index 68612db..d8a1fc4 100644
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -7414,6 +7414,33 @@ process_signature(proc_t p, struct image_params *imgp)
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ 			/* SWEET runs every iOS binary this way: one short line per exec. */
+ 			printf("exec %s\n", p->p_name);
++			{
++				/*
++				 * S62: boot-arg s62noexec=name1,name2 refuses daemons that only
++				 * crash-loop without their hardware (each crash costs a
++				 * ReportCrash run); launchd keeps its normal respawn throttle.
++				 */
++				static char deny[256];
++				static int deny_init;
++				if (!deny_init) {
++					deny_init = 1;
++					(void)PE_parse_boot_argn("s62noexec", deny, sizeof(deny));
++				}
++				size_t nl = strlen(p->p_name);
++				for (const char *q = deny; nl != 0 && *q;) {
++					const char *e = q;
++					while (*e && *e != ',') {
++						e++;
++					}
++					if ((size_t)(e - q) == nl && strncmp(q, p->p_name, nl) == 0) {
++						signature_failure_reason = os_reason_create(OS_REASON_EXEC,
++						    EXEC_EXIT_REASON_WRONG_PLATFORM);
++						error = EACCES;
++						goto done;
++					}
++					q = *e ? e + 1 : e;
++				}
++			}
+ #else
+ 			printf("Allowing spawn of iOS binary %s since it has "
+ 			    "com.apple.private.security.no-sandbox entitlement or unentitled_ios_sim_launch "
 diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
 index 2545cf9..09e5feb 100644
 --- a/iokit/Kernel/arm/SweetCPU.cpp
